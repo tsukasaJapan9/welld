@@ -138,9 +138,10 @@ export default function ChatInterface() {
         if (finalTranscript) {
           // 最終結果がある場合は即座に送信
           console.log('🎯 最終結果検出:', finalTranscript);
-          setInputValue(finalTranscript); // 最終結果をテキストボックスに表示
+          setInputValue(finalTranscript);
           setPendingTranscript('');
-          setIsRecording(false);
+          // isRecordingはfalseにしない（継続的な音声認識のため）
+          // setIsRecording(false); // この行を削除
           // 自動送信（関数内で直接処理）
           const userMessage: Message = {
             id: Date.now().toString(),
@@ -225,6 +226,7 @@ export default function ChatInterface() {
               }
             } catch (error) {
               console.error('音声認識の再開に失敗:', error);
+              // 再開に失敗した場合のみisRecordingをfalseにする
               setIsRecording(false);
             }
           }, 100); // 100ms後に再開を試行
@@ -350,13 +352,35 @@ export default function ChatInterface() {
     }
 
     if (isRecording) {
+      // 音声認識を停止
+      console.log('🛑 音声認識を停止します');
       recognition.stop();
       setIsRecording(false);
+      setPendingTranscript('');
+
+      // 録音終了時にpendingTranscriptがあれば自動送信
+      if (pendingTranscript && pendingTranscript.trim()) {
+        console.log('📤 手動停止時の自動送信:', pendingTranscript);
+        setInputValue(pendingTranscript);
+        setPendingTranscript('');
+        // 自動送信（関数内で直接処理）
+        const userMessage: Message = {
+          id: Date.now().toString(),
+          content: pendingTranscript,
+          role: 'user',
+          timestamp: new Date(),
+        };
+        setMessages(prev => [...prev, userMessage]);
+        // 音声認識の結果を直接送信
+        sendMessageToAPI(pendingTranscript);
+      }
     } else {
+      // 音声認識を開始
       try {
-        // 直接音声認識を開始
+        console.log('🎤 音声認識を開始します');
         recognition.start();
         setIsRecording(true);
+        setPendingTranscript('');
       } catch (error) {
         console.error('Failed to start speech recognition:', error);
         alert('音声認識の開始に失敗しました。\n\n対処法：\n1. ページを再読み込み\n2. ブラウザを再起動\n3. 別のブラウザでお試しください');
@@ -512,16 +536,16 @@ export default function ChatInterface() {
           <button
             type="button"
             onClick={toggleRecording}
-            disabled={isLoading || !session || !recognition || permissionStatus === 'denied'}
+            disabled={isLoading || !session || !recognition}
             className={`px-4 py-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-offset-2 transition-colors ${isRecording
-              ? 'bg-red-600 text-white hover:bg-red-700 focus:ring-red-500'
+              ? 'bg-red-600 text-white hover:bg-red-700 focus:ring-red-500' // 音声認識中は赤色
               : permissionStatus === 'denied'
-                ? 'bg-gray-400 text-gray-200 cursor-not-allowed'
-                : 'bg-gray-600 text-white hover:bg-gray-700 focus:ring-gray-500'
+                ? 'bg-gray-400 text-gray-200 cursor-not-allowed' // 権限拒否時はグレー（無効）
+                : 'bg-gray-600 text-white hover:bg-gray-700 focus:ring-gray-500' // 通常時はグレー
               } disabled:opacity-50 disabled:cursor-not-allowed`}
             title={
               isRecording
-                ? '音声録音を停止'
+                ? '音声認識を停止（再度クリック）'
                 : permissionStatus === 'denied'
                   ? 'マイクへのアクセスが拒否されています。ブラウザの設定で許可してください。'
                   : '音声入力開始'
