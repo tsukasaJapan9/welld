@@ -61,6 +61,10 @@ uv sync
 ```bash
 python agents/root_agent.py
 ```
+またはAPIサーバを起動
+```
+uv run api/main.py
+```
 
 ### フロントエンドセットアップ
 
