@@ -48,7 +48,9 @@ class SimpleAIAgent:
     try:
       # セッションサービスを作成
       self.session_service = InMemorySessionService()
-      self.session = self.session_service.create_session(
+
+      # セッションを作成
+      self.session = await self.session_service.create_session(
         app_name=APP_NAME, user_id=self.user_id, session_id=self.session_id
       )
 
@@ -73,34 +75,45 @@ class SimpleAIAgent:
 
       print("✅ AIエージェントが初期化されました")
       print(f"📝 使用モデル: {MODEL_NAME}")
+      print(f"🆔 セッションID: {self.session_id}")
       print("🔄 セッションサービスとランナーが設定されました")
 
     except Exception as e:
       print(f"❌ エージェントの初期化に失敗しました: {e}")
       raise
 
-  async def call_agent_async(self, query: str, user_id: str, session_id: str) -> str:
+  async def call_agent_async(self, query: str) -> str:
     """Sends a query to the agent and prints the final response."""
-
-    # Prepare the user's message in ADK format
     content = types.Content(role="user", parts=[types.Part(text=query)])
-    final_response_text = "Agent did not produce a final response."  # Default
+    final_response_text: str = "Agent did not produce a final response."
 
-    # Key Concept: run_async executes the agent logic and yields Events.
-    # We iterate through events to find the final answer.
-    async for event in self.runner.run_async(user_id=user_id, session_id=session_id, new_message=content):
-      # You can uncomment the line below to see *all* events during execution
-      # print(f"  [Event] Author: {event.author}, Type: {type(event).__name__}, Final: {event.is_final_response()}, Content: {event.content}")
+    try:
+      # user_idとsession_idが設定されていることを確認
+      if self.user_id is None or self.session_id is None:
+        return "ユーザーIDまたはセッションIDが設定されていません"
 
-      # Key Concept: is_final_response() marks the concluding message for the turn.
-      if event.is_final_response():
-        if event.content and event.content.parts:
-          # Assuming text response in the first part
-          final_response_text = event.content.parts[0].text
-        elif event.actions and event.actions.escalate:  # Handle potential errors/escalations
-          final_response_text = f"Agent escalated: {event.error_message or 'No specific message.'}"
-        # Add more checks here if needed (e.g., specific error codes)
-        break  # Stop processing events once the final response is found
+      # runnerが設定されていることを確認
+      if self.runner is None:
+        return "ランナーが設定されていません"
+
+      async for event in self.runner.run_async(user_id=self.user_id, session_id=self.session_id, new_message=content):
+        # print(f"  [Event] Author: {event.author}, Type: {type(event).__name__}, Final: {event.is_final_response()}, Content: {event.content}")
+
+        if event.is_final_response():
+          if event.content and event.content.parts:
+            text_part = event.content.parts[0].text
+            if text_part is not None:
+              final_response_text = text_part
+          elif event.actions and event.actions.escalate:  # Handle potential errors/escalations
+            final_response_text = f"Agent escalated: {event.error_message or 'No specific message.'}"
+
+          # Add more checks here if needed (e.g., specific error codes)
+          # Stop processing events once the final response is found
+          break
+
+    except Exception as e:
+      print(f"⚠️ エージェント実行中にエラーが発生しました: {e}")
+      final_response_text = f"エラーが発生しました: {e}"
 
     return final_response_text
 
@@ -116,7 +129,7 @@ class SimpleAIAgent:
       if self.user_id is None or self.session_id is None:
         raise ValueError("ユーザーIDまたはセッションIDが設定されていません")
 
-      final_response_text = await self.call_agent_async(user_input, self.user_id, self.session_id)
+      final_response_text = await self.call_agent_async(user_input)
 
       return final_response_text
 
@@ -128,8 +141,6 @@ class SimpleAIAgent:
     """インタラクティブなチャットセッションを開始"""
     print("🤖 AIエージェントとのチャットを開始します")
     print("終了するには 'quit' または 'exit' と入力してください")
-    print("基本的な質問例: こんにちは、天気、時間、名前")
-    print("その他の質問も自由にお聞きください！")
     print("-" * 50)
 
     while True:
