@@ -142,8 +142,9 @@ export default function ChatInterface() {
           console.log('🎯 最終結果検出:', finalTranscript);
           setInputValue(finalTranscript);
           setPendingTranscript('');
-          // isRecordingはfalseにしない（継続的な音声認識のため）
-          // setIsRecording(false); // この行を削除
+          // isRecordingは絶対にfalseにしない（継続的な音声認識のため）
+          console.log('🔄 継続的音声認識を維持します。isRecording:', isRecording);
+
           // 自動送信（関数内で直接処理）
           const userMessage: Message = {
             id: Date.now().toString(),
@@ -154,6 +155,23 @@ export default function ChatInterface() {
           setMessages(prev => [...prev, userMessage]);
           // 音声認識の結果を直接送信
           sendMessageToAPI(finalTranscript);
+
+          // 継続的音声認識のために少し待ってから再開を試行
+          setTimeout(() => {
+            if (isRecording) {
+              try {
+                console.log('🔄 最終結果後の継続的音声認識を再開します');
+                recognitionInstance.start();
+                console.log('✅ 継続的音声認識を再開しました');
+              } catch (error) {
+                console.error('継続的音声認識の再開に失敗:', error);
+                // 再開に失敗した場合のみisRecordingをfalseにする
+                setIsRecording(false);
+              }
+            } else {
+              console.log('⚠️ isRecordingがfalseになっているため、継続的音声認識を再開できません');
+            }
+          }, 500); // 500ms後に再開を試行
         } else if (interimTranscript) {
           // 中間結果がある場合は一時保存し、テキストボックスにも表示
           console.log('📝 中間結果更新:', interimTranscript);
@@ -198,7 +216,7 @@ export default function ChatInterface() {
       };
 
       recognitionInstance.onend = () => {
-        console.log('🔚 音声認識終了, pendingTranscript:', pendingTranscript);
+        console.log('🔚 音声認識終了, pendingTranscript:', pendingTranscript, 'isRecording:', isRecording);
 
         // 録音終了時にpendingTranscriptがあれば自動送信
         if (pendingTranscript && pendingTranscript.trim()) {
@@ -402,6 +420,7 @@ export default function ChatInterface() {
       return;
     }
 
+    console.log('📤 API送信開始, isRecording:', isRecording);
     setIsLoading(true);
     try {
       const response = await fetch('http://127.0.0.1:8000/api/chat', {
@@ -439,6 +458,7 @@ export default function ChatInterface() {
       setMessages(prev => [...prev, errorMessage]);
     } finally {
       setIsLoading(false);
+      console.log('📤 API送信完了, isRecording:', isRecording);
       // テキストボックスをクリア
       setInputValue('');
       // 送信完了後にフォーカスを入力フィールドに戻す
