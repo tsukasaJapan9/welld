@@ -3,11 +3,25 @@
 import { useState, useRef, useEffect } from 'react';
 import { Send, Bot, User, Loader2 } from 'lucide-react';
 
+// UUID生成関数（crypto.randomUUID()の代替）
+function generateUUID(): string {
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function (c) {
+    const r = Math.random() * 16 | 0;
+    const v = c === 'x' ? r : (r & 0x3 | 0x8);
+    return v.toString(16);
+  });
+}
+
 interface Message {
   id: string;
   content: string;
   role: 'user' | 'assistant';
   timestamp: Date;
+}
+
+interface ChatSession {
+  sessionId: string;
+  userId: string;
 }
 
 export default function ChatInterface() {
@@ -21,6 +35,7 @@ export default function ChatInterface() {
   ]);
   const [inputValue, setInputValue] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [session, setSession] = useState<ChatSession | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   const scrollToBottom = () => {
@@ -31,9 +46,20 @@ export default function ChatInterface() {
     scrollToBottom();
   }, [messages]);
 
+  // セッションの初期化
+  useEffect(() => {
+    if (!session) {
+      const newSessionId = generateUUID();
+      setSession({
+        sessionId: newSessionId,
+        userId: 'web_user',
+      });
+    }
+  }, [session]);
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!inputValue.trim() || isLoading) return;
+    if (!inputValue.trim() || isLoading || !session) return;
 
     const userMessage: Message = {
       id: Date.now().toString(),
@@ -47,10 +73,14 @@ export default function ChatInterface() {
     setIsLoading(true);
 
     try {
-      const response = await fetch('/api/chat', {
+      const response = await fetch('http://127.0.0.1:8001/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message: inputValue.trim() }),
+        body: JSON.stringify({
+          message: inputValue.trim(),
+          session_id: session.sessionId,
+          user_id: session.userId
+        }),
       });
 
       if (!response.ok) {
@@ -89,6 +119,11 @@ export default function ChatInterface() {
           <Bot className="h-6 w-6 text-white" />
           <h2 className="text-xl font-semibold text-white">AI Assistant</h2>
         </div>
+        {session && (
+          <div className="text-blue-100 text-sm mt-2">
+            Session ID: {session.sessionId.slice(0, 8)}...
+          </div>
+        )}
       </div>
 
       {/* メッセージエリア */}
@@ -104,8 +139,8 @@ export default function ChatInterface() {
             >
               <div
                 className={`flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center ${message.role === 'user'
-                    ? 'bg-blue-500 text-white'
-                    : 'bg-gray-200 text-gray-600'
+                  ? 'bg-blue-500 text-white'
+                  : 'bg-gray-200 text-gray-600'
                   }`}
               >
                 {message.role === 'user' ? (
@@ -116,8 +151,8 @@ export default function ChatInterface() {
               </div>
               <div
                 className={`px-4 py-2 rounded-lg ${message.role === 'user'
-                    ? 'bg-blue-500 text-white'
-                    : 'bg-gray-100 text-gray-800'
+                  ? 'bg-blue-500 text-white'
+                  : 'bg-gray-100 text-gray-800'
                   }`}
               >
                 <p className="text-sm whitespace-pre-wrap">{message.content}</p>
@@ -160,11 +195,11 @@ export default function ChatInterface() {
             onChange={(e) => setInputValue(e.target.value)}
             placeholder="メッセージを入力してください..."
             className="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-            disabled={isLoading}
+            disabled={isLoading || !session}
           />
           <button
             type="submit"
-            disabled={!inputValue.trim() || isLoading}
+            disabled={!inputValue.trim() || isLoading || !session}
             className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
           >
             <Send className="h-4 w-4" />
