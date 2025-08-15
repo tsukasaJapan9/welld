@@ -37,6 +37,7 @@ export default function ChatInterface() {
   const [isLoading, setIsLoading] = useState(false);
   const [session, setSession] = useState<ChatSession | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLTextAreaElement>(null); // 入力フィールドのrefを追加
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -73,7 +74,7 @@ export default function ChatInterface() {
     setIsLoading(true);
 
     try {
-      const response = await fetch('http://127.0.0.1:8001/api/chat', {
+      const response = await fetch('http://127.0.0.1:8000/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -108,6 +109,17 @@ export default function ChatInterface() {
       setMessages(prev => [...prev, errorMessage]);
     } finally {
       setIsLoading(false);
+      // 送信完了後にフォーカスを入力フィールドに戻す
+      setTimeout(() => {
+        inputRef.current?.focus();
+      }, 100);
+    }
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (e.key === 'Enter' && e.shiftKey) {
+      e.preventDefault();
+      handleSubmit(e as any);
     }
   };
 
@@ -127,7 +139,7 @@ export default function ChatInterface() {
       </div>
 
       {/* メッセージエリア */}
-      <div className="h-96 overflow-y-auto p-4 space-y-4">
+      <div className="h-[600px] overflow-y-auto p-4 space-y-4">
         {messages.map((message) => (
           <div
             key={message.id}
@@ -189,13 +201,16 @@ export default function ChatInterface() {
       {/* 入力エリア */}
       <div className="border-t border-gray-200 p-4">
         <form onSubmit={handleSubmit} className="flex space-x-2">
-          <input
-            type="text"
+          <textarea
             value={inputValue}
             onChange={(e) => setInputValue(e.target.value)}
+            onKeyDown={handleKeyDown}
             placeholder="メッセージを入力してください..."
-            className="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            className="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none"
             disabled={isLoading || !session}
+            ref={inputRef}
+            rows={1}
+            style={{ minHeight: '44px', maxHeight: '120px' }}
           />
           <button
             type="submit"
