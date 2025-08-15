@@ -2,6 +2,8 @@
 
 import { useState, useRef, useEffect } from 'react';
 import { Send, Bot, User, Loader2, Mic, MicOff } from 'lucide-react';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 
 // Web Speech APIの型定義
 declare global {
@@ -230,6 +232,9 @@ export default function ChatInterface() {
               setIsRecording(false);
             }
           }, 100); // 100ms後に再開を試行
+        } else {
+          // isRecordingがfalseの場合、音声認識が意図的に停止された
+          console.log('🛑 音声認識が意図的に停止されました');
         }
       };
 
@@ -378,9 +383,11 @@ export default function ChatInterface() {
       // 音声認識を開始
       try {
         console.log('🎤 音声認識を開始します');
+        // 既存の音声認識をクリア
+        setPendingTranscript('');
+        setInputValue('');
         recognition.start();
         setIsRecording(true);
-        setPendingTranscript('');
       } catch (error) {
         console.error('Failed to start speech recognition:', error);
         alert('音声認識の開始に失敗しました。\n\n対処法：\n1. ページを再読み込み\n2. ブラウザを再起動\n3. 別のブラウザでお試しください');
@@ -482,9 +489,46 @@ export default function ChatInterface() {
                   : 'bg-gray-100 text-gray-800'
                   }`}
               >
-                <p className="text-sm whitespace-pre-wrap">{message.content}</p>
+                <div className="text-sm">
+                  {message.role === 'user' ? (
+                    <p className="whitespace-pre-wrap m-0">{message.content}</p>
+                  ) : (
+                    <ReactMarkdown
+                      remarkPlugins={[remarkGfm]}
+                      components={{
+                        // マークダウンのスタイリングをカスタマイズ
+                        p: ({ children }) => <p className="m-0 mb-2 last:mb-0">{children}</p>,
+                        h1: ({ children }) => <h1 className="text-lg font-bold m-0 mb-2">{children}</h1>,
+                        h2: ({ children }) => <h2 className="text-base font-bold m-0 mb-2">{children}</h2>,
+                        h3: ({ children }) => <h3 className="text-sm font-bold m-0 mb-2">{children}</h3>,
+                        ul: ({ children }) => <ul className="list-disc list-inside m-0 mb-2 space-y-1">{children}</ul>,
+                        ol: ({ children }) => <ol className="list-decimal list-inside m-0 mb-2 space-y-1">{children}</ol>,
+                        li: ({ children }) => <li className="m-0">{children}</li>,
+                        code: ({ children, className }) => (
+                          <code className={`bg-gray-200 px-1 py-0.5 rounded text-xs font-mono ${className || ''}`}>
+                            {children}
+                          </code>
+                        ),
+                        pre: ({ children }) => (
+                          <pre className="bg-gray-200 p-2 rounded text-xs font-mono overflow-x-auto m-0 mb-2">
+                            {children}
+                          </pre>
+                        ),
+                        blockquote: ({ children }) => (
+                          <blockquote className="border-l-4 border-gray-300 pl-3 italic m-0 mb-2">
+                            {children}
+                          </blockquote>
+                        ),
+                        strong: ({ children }) => <strong className="font-bold">{children}</strong>,
+                        em: ({ children }) => <em className="italic">{children}</em>,
+                      }}
+                    >
+                      {message.content}
+                    </ReactMarkdown>
+                  )}
+                </div>
                 <p
-                  className={`text-xs mt-1 ${message.role === 'user' ? 'text-blue-100' : 'text-gray-500'
+                  className={`text-xs mt-2 ${message.role === 'user' ? 'text-blue-100' : 'text-gray-500'
                     }`}
                 >
                   {typeof window !== 'undefined' ? message.timestamp.toLocaleTimeString() : ''}
