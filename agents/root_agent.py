@@ -5,119 +5,176 @@ Simple AI Agent using Google ADK
 """
 
 import asyncio
+import logging
+import uuid
+import warnings
 
-from google.adk import Agent
-from google.adk.models import Gemini
+from google.adk.agents import Agent
+from google.adk.runners import Runner
+from google.adk.sessions import InMemorySessionService
+from google.genai import types
+
+# 警告を無視
+warnings.filterwarnings("ignore")
+
+# ログレベルを設定
+logging.basicConfig(level=logging.ERROR)
+
+MODEL_NAME = "gemini-2.5-flash"
+APP_NAME = "SimpleAI"
+USER_ID = "test_user"
 
 
 class SimpleAIAgent:
-    """シンプルなAIエージェントクラス"""
+  """シンプルなAIエージェントクラス"""
 
-    def __init__(self):
-        """エージェントの初期化"""
-        self.agent = None
+  def __init__(self):
+    """エージェントの初期化"""
+    self.agent = None
+    self.runner = None
+    self.session_service = None
+    self.session = None
+    self.session_id: str | None = None
+    self.user_id: str | None = None
 
-    async def initialize(self):
-        """エージェントの初期化処理"""
-        try:
-            # Geminiモデルを設定
-            model = Gemini()
+  async def initialize(self, session_id: str, user_id: str):
+    """
+    エージェントの初期化処理
+    ユーザが新しい一連の会話を始めたときにセッションなどを作成する
+    """
+    self.session_id = session_id
+    self.user_id = user_id
 
-            # エージェントの作成
-            self.agent = Agent(
-                name="SimpleAI",
-                description="シンプルなAIエージェント",
-                instruction="""
+    try:
+      # セッションサービスを作成
+      self.session_service = InMemorySessionService()
+      self.session = self.session_service.create_session(
+        app_name=APP_NAME, user_id=self.user_id, session_id=self.session_id
+      )
+
+      # エージェントの作成
+      self.agent = Agent(
+        name="SimpleAI",
+        description="シンプルなAIエージェント",
+        instruction="""
                 あなたは親切で役立つAIアシスタントです。
                 ユーザーの質問や要望に対して、丁寧で分かりやすい回答を提供してください。
                 日本語で回答してください。
                 """,
-                model=model,
-            )
-            print("✅ AIエージェントが初期化されました")
-            print(f"📝 使用モデル: {model.model}")
+        model=MODEL_NAME,
+      )
 
-        except Exception as e:
-            print(f"❌ エージェントの初期化に失敗しました: {e}")
-            raise
+      # ランナーを作成
+      self.runner = Runner(
+        agent=self.agent,
+        app_name=APP_NAME,
+        session_service=self.session_service,
+      )
 
-    async def chat(self, user_input: str) -> str:
-        """ユーザーの入力に対して応答を生成"""
-        if not self.agent:
-            return "エージェントが初期化されていません"
+      print("✅ AIエージェントが初期化されました")
+      print(f"📝 使用モデル: {MODEL_NAME}")
+      print("🔄 セッションサービスとランナーが設定されました")
 
-        try:
-            # Google ADKのrun_asyncメソッドを使って応答を生成
-            # 現在は基本的な応答を返す（実際のLLM応答は後で実装）
+    except Exception as e:
+      print(f"❌ エージェントの初期化に失敗しました: {e}")
+      raise
 
-            # 基本的な応答パターン（フォールバック用）
-            basic_responses = {
-                "こんにちは": "こんにちは！何かお手伝いできることはありますか？",
-                "hello": "Hello! How can I help you today?",
-                "天気": "申し訳ございませんが、現在の天気情報を取得する機能は実装されていません。",
-                "時間": "現在時刻を確認する機能は実装されていませんが、基本的な質問にはお答えできます。",
-                "名前": "私はSimpleAIという名前のAIアシスタントです。よろしくお願いします！",
-            }
+  async def call_agent_async(self, query: str, user_id: str, session_id: str) -> str:
+    """Sends a query to the agent and prints the final response."""
 
-            # 基本的な応答パターンをチェック
-            for pattern, response in basic_responses.items():
-                if pattern in user_input:
-                    return response
+    # Prepare the user's message in ADK format
+    content = types.Content(role="user", parts=[types.Part(text=query)])
+    final_response_text = "Agent did not produce a final response."  # Default
 
-            # その他の質問には、より一般的な応答を返す
-            return f"「{user_input}」についてのご質問ですね。現在は基本的な応答のみ可能ですが、より詳細な機能を追加予定です。"
+    # Key Concept: run_async executes the agent logic and yields Events.
+    # We iterate through events to find the final answer.
+    async for event in self.runner.run_async(user_id=user_id, session_id=session_id, new_message=content):
+      # You can uncomment the line below to see *all* events during execution
+      # print(f"  [Event] Author: {event.author}, Type: {type(event).__name__}, Final: {event.is_final_response()}, Content: {event.content}")
 
-        except Exception as e:
-            return f"エラーが発生しました: {e}"
+      # Key Concept: is_final_response() marks the concluding message for the turn.
+      if event.is_final_response():
+        if event.content and event.content.parts:
+          # Assuming text response in the first part
+          final_response_text = event.content.parts[0].text
+        elif event.actions and event.actions.escalate:  # Handle potential errors/escalations
+          final_response_text = f"Agent escalated: {event.error_message or 'No specific message.'}"
+        # Add more checks here if needed (e.g., specific error codes)
+        break  # Stop processing events once the final response is found
 
-    async def interactive_chat(self):
-        """インタラクティブなチャットセッションを開始"""
-        print("🤖 AIエージェントとのチャットを開始します")
-        print("終了するには 'quit' または 'exit' と入力してください")
-        print("基本的な質問例: こんにちは、天気、時間、名前")
+    return final_response_text
+
+  async def chat(self, user_input: str) -> str:
+    """ユーザーの入力に対して応答を生成"""
+    if not self.agent or not self.runner:
+      return "エージェントが初期化されていません"
+
+    try:
+      # Google ADKのRunnerを使って実際のLLM応答を生成
+      print("🤖 LLMに問い合わせ中...")
+
+      if self.user_id is None or self.session_id is None:
+        raise ValueError("ユーザーIDまたはセッションIDが設定されていません")
+
+      final_response_text = await self.call_agent_async(user_input, self.user_id, self.session_id)
+
+      return final_response_text
+
+    except Exception as e:
+      print(f"⚠️ LLM応答生成中にエラーが発生しました: {e}")
+      return "エラーが発生しました"
+
+  async def interactive_chat(self):
+    """インタラクティブなチャットセッションを開始"""
+    print("🤖 AIエージェントとのチャットを開始します")
+    print("終了するには 'quit' または 'exit' と入力してください")
+    print("基本的な質問例: こんにちは、天気、時間、名前")
+    print("その他の質問も自由にお聞きください！")
+    print("-" * 50)
+
+    while True:
+      try:
+        # ユーザー入力を受け取り
+        user_input = input("👤 あなた: ").strip()
+
+        # 終了条件をチェック
+        if user_input.lower() in ["quit", "exit", "終了", "さようなら"]:
+          print("👋 チャットを終了します。お疲れ様でした！")
+          break
+
+        if not user_input:
+          continue
+
+        # AIエージェントの応答を取得
+        print("🤖 AI: 考え中...")
+        response = await self.chat(user_input)
+        print(f"🤖 AI: {response}")
         print("-" * 50)
 
-        while True:
-            try:
-                # ユーザー入力を受け取り
-                user_input = input("👤 あなた: ").strip()
-
-                # 終了条件をチェック
-                if user_input.lower() in ["quit", "exit", "終了", "さようなら"]:
-                    print("👋 チャットを終了します。お疲れ様でした！")
-                    break
-
-                if not user_input:
-                    continue
-
-                # AIエージェントの応答を取得
-                print("🤖 AI: 考え中...")
-                response = await self.chat(user_input)
-                print(f"🤖 AI: {response}")
-                print("-" * 50)
-
-            except KeyboardInterrupt:
-                print("\n👋 チャットを終了します。お疲れ様でした！")
-                break
-            except Exception as e:
-                print(f"❌ エラーが発生しました: {e}")
+      except KeyboardInterrupt:
+        print("\n👋 チャットを終了します。お疲れ様でした！")
+        break
+      except Exception as e:
+        print(f"❌ エラーが発生しました: {e}")
 
 
 async def main():
-    """メイン関数"""
-    agent = SimpleAIAgent()
+  """メイン関数"""
+  agent = SimpleAIAgent()
 
-    try:
-        # エージェントを初期化
-        await agent.initialize()
+  try:
+    # エージェントを初期化
+    session_id = str(uuid.uuid4())
+    user_id = "test_user"
+    await agent.initialize(session_id, user_id)
 
-        # インタラクティブチャットを開始
-        await agent.interactive_chat()
+    # インタラクティブチャットを開始
+    await agent.interactive_chat()
 
-    except Exception as e:
-        print(f"❌ プログラムの実行中にエラーが発生しました: {e}")
+  except Exception as e:
+    print(f"❌ プログラムの実行中にエラーが発生しました: {e}")
 
 
 if __name__ == "__main__":
-    # 非同期メイン関数を実行
-    asyncio.run(main())
+  # 非同期メイン関数を実行
+  asyncio.run(main())
