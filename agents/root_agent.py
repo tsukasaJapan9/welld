@@ -34,7 +34,8 @@ warnings.filterwarnings("ignore")
 # ログレベルを設定
 logging.basicConfig(level=logging.ERROR)
 
-MODEL_NAME = "gemini-2.5-flash"
+# MODEL_NAME = "gemini-2.5-flash"
+MODEL_NAME = "gemini-2.5-pro"
 APP_NAME = "SimpleAI"
 USER_ID = "test_user"
 
@@ -136,10 +137,10 @@ class SimpleAIAgent:
               
                 # 記憶について
                 あなたは記憶モジュールを持っており、user_memory_mcp_serverというツールで実装されています。
-                user_memory_mcp_serverツールを積極的に使うようにしてください。
-                特にユーザの趣味趣向や性格、興味関心、習慣、健康、学習、人間関係、目標、感情、場所、時間に関する情報については必ず保存してください。
-                そして積極的にメモリの情報を参照し、ユーザの趣向に合わせた回答をしてください。
+                特にユーザの趣味趣向や性格、興味関心、習慣、健康、学習、人間関係、目標、感情、場所、時間に関する情報が得られた場合は
+                必ずMCPのadd_memory関数を呼び出すことでメモリに保存してください。
                 メモリに保存する際はユーザに承認を求める必要はありません。勝手に保存してください。
+                そして積極的にメモリの情報を参照し、ユーザの趣向に合わせた回答をしてください。
                 """,
         model=MODEL_NAME,
         tools=self.mcp_tools,

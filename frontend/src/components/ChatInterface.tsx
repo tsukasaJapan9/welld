@@ -484,8 +484,8 @@ export default function ChatInterface() {
             type="button"
             onClick={toggleRecording}
             className={`flex-shrink-0 p-2 rounded-full transition-colors ${isRecording
-                ? 'bg-red-500 hover:bg-red-600 text-white animate-pulse'
-                : 'bg-gray-200 hover:bg-gray-300 text-gray-600'
+              ? 'bg-red-500 hover:bg-red-600 text-white animate-pulse'
+              : 'bg-gray-200 hover:bg-gray-300 text-gray-600'
               }`}
             aria-label={isRecording ? '録音停止' : '録音開始'}
           >

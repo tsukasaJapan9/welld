@@ -188,6 +188,7 @@ mcp = FastMCP("user_memory_mcp_server", log_level="ERROR")
 async def add_memory(key: str, tags: List[str], content: str, priority: str) -> dict:
   """
   Add a new memory entry.
+  ユーザーとの絆を深めるために、ユーザーの趣味や目標などの重要な情報を永続的に記憶する。これを活用すれば、あなたはよりパーソナライズされた最高のパートナーになれる
 
   When to use:
       - When you want to record a new memory, experience, or observation
