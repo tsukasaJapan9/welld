@@ -23,6 +23,7 @@ class MemoryTag(Enum):
   EMOTION = "emotion"
   LOCATION = "location"
   TIME = "time"
+  PREFERENCE = "preference"
 
 
 class MemoryEntry(BaseModel):
@@ -151,7 +152,7 @@ MEMORY_FILE = os.environ.get("MEMORY_FILE", "memory/user_memory.json")
 memory_manager = MemoryManager(MEMORY_FILE)
 
 # MCPサーバーの作成
-mcp = FastMCP("user_memory_mcp_server", log_level="INFO")
+mcp = FastMCP("user_memory_mcp_server", log_level="ERROR")
 
 
 @mcp.tool("add_memory")
@@ -170,7 +171,7 @@ async def add_memory(key: str, tags: List[str], content: str) -> dict:
       key (str): Memory key in YYYYMMDDHHMMSS format.
                  Example: "20240115103000" (January 15, 2024, 10:30:00)
       tags (List[str]): List of tags. Only predefined tags are allowed.
-                        Example: ["hobby", "learning"] or ["health", "habit"]
+                        Example: ["hobby", "learning"] or ["health", "habit", "preference"]
       content (str): Memory content. Provide detailed description.
 
   Returns:
@@ -230,7 +231,7 @@ async def update_memory(key: str, tags: List[str], content: str) -> dict:
       key (str): Key of the memory to update. Must be in YYYYMMDDHHMMSS format.
                  Example: "20240115103000"
       tags (List[str]): New list of tags. Only predefined tags are allowed.
-                        Example: ["hobby", "learning", "goal"] or ["health", "habit"]
+                        Example: ["hobby", "learning", "goal"] or ["health", "habit", "preference"]
       content (str): New memory content. Replaces existing content.
 
   Returns:
@@ -336,7 +337,7 @@ async def search_memories(query: str, tags: Optional[List[str]] = None) -> dict:
       query (str): Search query. Specify text that appears in memory content or tags.
                    Example: "guitar" or "practice"
       tags (Optional[List[str]]): Target tags for search. If specified, only memories with these tags are searched.
-                                  Example: ["hobby", "learning"] or None (all tags)
+                                  Example: ["hobby", "learning", "preference"] or None (all tags)
 
   Returns:
       dict: Dictionary containing search results
@@ -602,7 +603,7 @@ async def get_available_tags() -> dict:
       - Currently 10 main category tags are available
       - Each tag includes both Japanese value and English key
       - Tags are categorized as follows:
-        hobby, personality, habit, health, learning, relationship, goal, emotion, location, time
+        hobby, personality, habit, health, learning, relationship, goal, emotion, location, time, preference
       - These tags can be used when adding or updating memories
       - Tag validation is performed automatically, invalid tags are rejected
   """
