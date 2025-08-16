@@ -8,12 +8,20 @@ import asyncio
 import logging
 import uuid
 import warnings
+from datetime import datetime
+from typing import Optional
 
 from dotenv import load_dotenv
-from google.adk.agents import Agent
+from google.adk.agents import Agent, LlmAgent
+from google.adk.agents.callback_context import CallbackContext
+from google.adk.models import LlmRequest, LlmResponse
 from google.adk.runners import Runner
 from google.adk.sessions import InMemorySessionService
+from google.adk.tools import agent_tool, google_search
+from google.adk.tools.mcp_tool.mcp_toolset import MCPToolset
 from google.genai import types
+
+from tools.utils.mcp_connect import MCPConnector
 
 load_dotenv()
 
@@ -29,6 +37,32 @@ APP_NAME = "SimpleAI"
 USER_ID = "test_user"
 
 
+def before_model_modifier(callback_context: CallbackContext, llm_request: LlmRequest) -> Optional[LlmResponse]:
+  """Inspects/modifies the LLM request or skips the call."""
+  agent_name = callback_context.agent_name
+  # これでシステムプロンプトを見ることができる
+  # print(llm_request.config.system_instruction)
+  original_instruction = llm_request.config.system_instruction
+
+  # 時刻情報を付け加える
+  if original_instruction:
+    current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    new_instruction = f"{original_instruction}\n\nCurrent time: {current_time}"
+    llm_request.config.system_instruction = new_instruction
+
+  return None
+
+
+search_agent = Agent(
+  model="gemini-2.0-flash",
+  name="SearchAgent",
+  instruction="""
+    You're a specialist in Google Search
+    """,
+  tools=[google_search],
+)
+
+
 class SimpleAIAgent:
   """シンプルなAIエージェントクラス"""
 
@@ -41,6 +75,9 @@ class SimpleAIAgent:
     self.session_id: str | None = None
     self.user_id: str | None = None
 
+    self.mcp_connector = MCPConnector()
+    self.mcp_tools: list[MCPToolset] = []
+
   async def initialize(self, session_id: str, user_id: str):
     """
     エージェントの初期化処理
@@ -50,6 +87,16 @@ class SimpleAIAgent:
     self.user_id = user_id
 
     try:
+      # MCPツール(stdio)を取得
+      self.mcp_names, self.mcp_tools = self.mcp_connector.get_stdio_tools()
+      self.mcp_tools.append(agent_tool.AgentTool(agent=search_agent))
+
+      print("--------------------------------")
+      print("Available MCP Tools:")
+      for name in self.mcp_names:
+        print(f"  - {name}")
+      print("--------------------------------")
+
       # セッションサービスを作成
       self.session_service = InMemorySessionService()
 
@@ -59,7 +106,7 @@ class SimpleAIAgent:
       )
 
       # エージェントの作成
-      self.agent = Agent(
+      self.agent = LlmAgent(
         name="SimpleAI",
         description="シンプルなAIエージェント",
         instruction="""
@@ -68,6 +115,8 @@ class SimpleAIAgent:
                 日本語で回答してください。
                 """,
         model=MODEL_NAME,
+        tools=self.mcp_tools,
+        before_model_callback=before_model_modifier,
       )
 
       # ランナーを作成
