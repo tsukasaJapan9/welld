@@ -11,6 +11,18 @@
       "env": {
         "GOOGLE_API_KEY": "GOOGLE_API_KEY"
       }
+    },
+    "user_memory_mcp_server": {
+      "command": "/home/tsukasa/.pyenv/shims/uv",
+      "args": [
+        "--directory",
+        "/home/tsukasa/works/welld/tools",
+        "run",
+        "user_memory_mcp_server.py"
+      ],
+      "env": {
+        "MEMORY_FILE": "memory/user_memory.json"
+      }
     }
   }
 }
