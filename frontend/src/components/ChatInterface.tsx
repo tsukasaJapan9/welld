@@ -90,7 +90,7 @@ export default function ChatInterface() {
         console.log('🎤 音声認識開始');
       };
 
-      recognition.onresult = (event) => {
+      recognition.onresult = (event: any) => {
         let finalTranscript = '';
         let interimTranscript = '';
 
@@ -122,19 +122,19 @@ export default function ChatInterface() {
         }
       };
 
-      recognition.onerror = (event) => {
+      recognition.onerror = (event: any) => {
         // 無音エラーは無視して継続
         if (event.error === 'no-speech') {
           console.log('⚠️ 無音検出 - 継続します');
           return;
         }
-        
+
         // abortedエラーも無視
         if (event.error === 'aborted') {
           console.log('⚠️ 中断エラー - 無視します');
           return;
         }
-        
+
         console.error('❌ 音声認識エラー:', event.error);
 
         // 重大なエラーの場合のみ停止
@@ -147,7 +147,7 @@ export default function ChatInterface() {
 
       recognition.onend = () => {
         console.log('🔚 音声認識終了イベント');
-        
+
         // 録音中フラグを確認して自動再開
         if (isRecordingRef.current) {
           console.log('🔄 録音継続中のため自動再開');
@@ -204,7 +204,7 @@ export default function ChatInterface() {
 
     setMessages(prev => [...prev, userMessage]);
     setInputValue('');
-    
+
     await sendMessageToAPI(inputValue.trim());
   };
 
@@ -216,7 +216,7 @@ export default function ChatInterface() {
 
     console.log('📤 API送信開始');
     setIsLoading(true);
-    
+
     try {
       const response = await fetch('http://127.0.0.1:8000/api/chat', {
         method: 'POST',
@@ -272,7 +272,7 @@ export default function ChatInterface() {
       console.log('🛑 録音停止を要求');
       setIsRecording(false);
       isRecordingRef.current = false;
-      
+
       // 現在の入力テキストがあれば送信
       if (inputValue && inputValue.trim()) {
         const userMessage: Message = {
@@ -285,7 +285,7 @@ export default function ChatInterface() {
         sendMessageToAPI(inputValue.trim());
         setInputValue('');
       }
-      
+
       // 音声認識を停止
       try {
         recognitionRef.current.stop();
@@ -299,7 +299,7 @@ export default function ChatInterface() {
       setInputValue('');
       setIsRecording(true);
       isRecordingRef.current = true;
-      
+
       try {
         recognitionRef.current.start();
         console.log('✅ 音声認識を開始しました');
@@ -357,7 +357,7 @@ export default function ChatInterface() {
             className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}
           >
             <div
-              className={`flex items-start space-x-2 max-w-xs lg:max-w-md ${message.role === 'user' ? 'flex-row-reverse space-x-reverse' : ''
+              className={`flex items-start space-x-2 max-w-2xl lg:max-w-4xl ${message.role === 'user' ? 'flex-row-reverse space-x-reverse' : ''
                 }`}
             >
               <div
@@ -483,11 +483,10 @@ export default function ChatInterface() {
           <button
             type="button"
             onClick={toggleRecording}
-            className={`flex-shrink-0 p-2 rounded-full transition-colors ${
-              isRecording
+            className={`flex-shrink-0 p-2 rounded-full transition-colors ${isRecording
                 ? 'bg-red-500 hover:bg-red-600 text-white animate-pulse'
                 : 'bg-gray-200 hover:bg-gray-300 text-gray-600'
-            }`}
+              }`}
             aria-label={isRecording ? '録音停止' : '録音開始'}
           >
             {isRecording ? <MicOff className="h-5 w-5" /> : <Mic className="h-5 w-5" />}
