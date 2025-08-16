@@ -1,0 +1,10 @@
+{
+  "mcpServers": {
+    "youtube_search_mcp_server": {
+      "command": "streamable_http",
+      "args": [
+        "http://localhost:10001/mcp/"
+      ]
+    }
+  }
+}
