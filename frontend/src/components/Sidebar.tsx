@@ -1,18 +1,54 @@
 'use client';
 
 import { useState } from 'react';
-import { Menu, X, MessageSquare, Settings, HelpCircle, History, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Menu, X, MessageSquare, Settings, HelpCircle, History, ChevronLeft, ChevronRight, Database } from 'lucide-react';
 
-export default function Sidebar() {
+interface SidebarProps {
+  currentPage: 'chat' | 'memory';
+  onPageChange: (page: 'chat' | 'memory') => void;
+}
+
+export default function Sidebar({ currentPage, onPageChange }: SidebarProps) {
   const [isMobileOpen, setIsMobileOpen] = useState(false);
   const [isCollapsed, setIsCollapsed] = useState(true);
 
   const menuItems = [
-    { icon: MessageSquare, label: 'チャット', href: '#', active: true },
-    { icon: History, label: '履歴', href: '#', active: false },
-    { icon: Settings, label: '設定', href: '#', active: false },
-    { icon: HelpCircle, label: 'ヘルプ', href: '#', active: false },
+    {
+      icon: MessageSquare,
+      label: 'チャット',
+      page: 'chat' as const,
+      active: currentPage === 'chat'
+    },
+    {
+      icon: Database,
+      label: 'メモリ',
+      page: 'memory' as const,
+      active: currentPage === 'memory'
+    },
+    {
+      icon: History,
+      label: '履歴',
+      page: 'chat' as const,
+      active: false
+    },
+    {
+      icon: Settings,
+      label: '設定',
+      page: 'chat' as const,
+      active: false
+    },
+    {
+      icon: HelpCircle,
+      label: 'ヘルプ',
+      page: 'chat' as const,
+      active: false
+    },
   ];
+
+  const handleMenuClick = (page: 'chat' | 'memory') => {
+    onPageChange(page);
+    setIsMobileOpen(false);
+  };
 
   return (
     <>
@@ -59,19 +95,18 @@ export default function Sidebar() {
             {menuItems.map((item, index) => {
               const Icon = item.icon;
               return (
-                <a
+                <button
                   key={index}
-                  href={item.href}
-                  className={`flex items-center ${isCollapsed ? 'justify-center' : 'space-x-3'} px-4 py-3 rounded-lg transition-colors ${item.active
+                  onClick={() => handleMenuClick(item.page)}
+                  className={`w-full flex items-center ${isCollapsed ? 'justify-center' : 'space-x-3'} px-4 py-3 rounded-lg transition-colors ${item.active
                     ? 'bg-blue-50 text-blue-600 font-medium'
                     : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
                     }`}
-                  onClick={() => setIsMobileOpen(false)}
                   title={isCollapsed ? item.label : undefined}
                 >
                   <Icon className="h-5 w-5 flex-shrink-0" />
                   {!isCollapsed && <span>{item.label}</span>}
-                </a>
+                </button>
               );
             })}
           </nav>
