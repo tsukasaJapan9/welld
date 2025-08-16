@@ -9,10 +9,14 @@ import logging
 import uuid
 import warnings
 
+from dotenv import load_dotenv
 from google.adk.agents import Agent
 from google.adk.runners import Runner
 from google.adk.sessions import InMemorySessionService
 from google.genai import types
+
+load_dotenv()
+
 
 # 警告を無視
 warnings.filterwarnings("ignore")
