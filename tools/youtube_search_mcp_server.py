@@ -30,7 +30,7 @@ class YouTubeSearchResult(BaseModel):
   video_url: str = Field(..., description="Video URL of the video")
 
 
-mcp = FastMCP("youtube_search_mcp_server")
+mcp = FastMCP("youtube_search_mcp_server", log_level="ERROR")
 
 
 @mcp.tool("youtube_search")
