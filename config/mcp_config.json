@@ -1,0 +1,15 @@
+{
+  "mcpServers": {
+    "youtube_search_mcp_server": {
+      "type": "stdio",
+      "command": "/home/tsukasa/.pyenv/shims/uv",
+      "args": [
+        "run",
+        "./tools/youtube_search_mcp_server.py"
+      ],
+      "env": {
+        "GOOGLE_API_KEY": "GOOGLE_API_KEY"
+      }
+    }
+  }
+}

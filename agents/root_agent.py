@@ -11,9 +11,12 @@ import warnings
 
 from dotenv import load_dotenv
 from google.adk.agents import Agent
+from google.adk.tools.mcp_tool.mcp_toolset import MCPToolset
 from google.adk.runners import Runner
 from google.adk.sessions import InMemorySessionService
 from google.genai import types
+
+from tools.utils.mcp_connect import MCPConnector
 
 load_dotenv()
 
@@ -41,6 +44,9 @@ class SimpleAIAgent:
     self.session_id: str | None = None
     self.user_id: str | None = None
 
+    self.mcp_connector = MCPConnector()
+    self.mcp_tools: list[MCPToolset] = []
+
   async def initialize(self, session_id: str, user_id: str):
     """
     エージェントの初期化処理
@@ -48,6 +54,12 @@ class SimpleAIAgent:
     """
     self.session_id = session_id
     self.user_id = user_id
+
+    # MCPツールを取得
+    self.mcp_tools = await self.mcp_connector.get_tools()
+
+    for tool in self.mcp_tools:
+      print(tool.name)
 
     try:
       # セッションサービスを作成
@@ -184,7 +196,7 @@ async def main():
     await agent.initialize(session_id, user_id)
 
     # インタラクティブチャットを開始
-    await agent.interactive_chat()
+    # await agent.interactive_chat()
 
   except Exception as e:
     print(f"❌ プログラムの実行中にエラーが発生しました: {e}")
