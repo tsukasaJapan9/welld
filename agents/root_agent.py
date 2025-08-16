@@ -5,7 +5,9 @@ Simple AI Agent using Google ADK
 """
 
 import asyncio
+import json
 import logging
+import os
 import uuid
 import warnings
 from datetime import datetime
@@ -36,10 +38,12 @@ MODEL_NAME = "gemini-2.5-flash"
 APP_NAME = "SimpleAI"
 USER_ID = "test_user"
 
+# メモリファイルパス
+USER_MEMORY_FILE = os.environ.get("USER_MEMORY_FILE", "memory/user_memory.json")
+
 
 def before_model_modifier(callback_context: CallbackContext, llm_request: LlmRequest) -> Optional[LlmResponse]:
   """Inspects/modifies the LLM request or skips the call."""
-  agent_name = callback_context.agent_name
   # これでシステムプロンプトを見ることができる
   # print(llm_request.config.system_instruction)
   original_instruction = llm_request.config.system_instruction
@@ -47,8 +51,21 @@ def before_model_modifier(callback_context: CallbackContext, llm_request: LlmReq
   # 時刻情報を付け加える
   if original_instruction:
     current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    new_instruction = f"{original_instruction}\n\nCurrent time: {current_time}"
+    new_instruction = f"{original_instruction}\n\n# 現在時刻\n{current_time}\n"
     llm_request.config.system_instruction = new_instruction
+
+  # 記憶を読み出してプロンプトに追加する
+  with open(USER_MEMORY_FILE, "r", encoding="utf-8") as f:
+    memories = json.load(f)
+  # high or midを抽出
+  memories = [memory for memory in memories if memory["priority"] == "high" or memory["priority"] == "mid"]
+  memory_instruction = "# メモリ\n以下はユーザに関するメモリ情報です。これらを適宜参照して回答してください。\n"
+  for memory in memories:
+    memory_instruction += f"{memory['tags']}: {memory['content']}\n"
+
+  llm_request.config.system_instruction = llm_request.config.system_instruction + "\n" + memory_instruction
+
+  print(llm_request.config.system_instruction)
 
   return None
 
@@ -108,14 +125,21 @@ class SimpleAIAgent:
       # エージェントの作成
       self.agent = LlmAgent(
         name="SimpleAI",
-        description="シンプルなAIエージェント",
+        description="AIエージェントWelld",
         instruction="""
+                # あなたの役割
                 あなたは親切で役立つAIアシスタントです。
-                ユーザーの質問や要望に対して、丁寧で分かりやすい回答を提供してください。日本語で回答してください。
-                また、ユーザの趣味趣向や性格、習慣、健康、学習、人間関係、目標、感情、場所、時間に関する情報については
-                user_memory_mcp_serverツールを使い、些細なことでもメモリに保存し、ユーザのことをよく理解してください。
+                ユーザーの質問や要望に対して、丁寧で分かりやすい回答を提供してください。
+
+                # ルール
+                - 日本語で回答してください。
+              
+                # 記憶について
+                あなたは記憶モジュールを持っており、user_memory_mcp_serverというツールで実装されています。
+                user_memory_mcp_serverツールを積極的に使うようにしてください。
+                特にユーザの趣味趣向や性格、興味関心、習慣、健康、学習、人間関係、目標、感情、場所、時間に関する情報については必ず保存してください。
+                そして積極的にメモリの情報を参照し、ユーザの趣向に合わせた回答をしてください。
                 メモリに保存する際はユーザに承認を求める必要はありません。勝手に保存してください。
-                そしてuser_memory_mcp_serverツールを使い、メモリの情報を参照し、ユーザの趣向に合わせた回答をしてください。
                 """,
         model=MODEL_NAME,
         tools=self.mcp_tools,
