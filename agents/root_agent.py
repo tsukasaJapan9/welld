@@ -11,9 +11,9 @@ import warnings
 
 from dotenv import load_dotenv
 from google.adk.agents import Agent
-from google.adk.tools.mcp_tool.mcp_toolset import MCPToolset
 from google.adk.runners import Runner
 from google.adk.sessions import InMemorySessionService
+from google.adk.tools.mcp_tool.mcp_toolset import MCPToolset
 from google.genai import types
 
 from tools.utils.mcp_connect import MCPConnector
@@ -55,13 +55,16 @@ class SimpleAIAgent:
     self.session_id = session_id
     self.user_id = user_id
 
-    # MCPツールを取得
-    self.mcp_tools = await self.mcp_connector.get_tools()
-
-    for tool in self.mcp_tools:
-      print(tool.name)
-
     try:
+      # MCPツール(stdio)を取得
+      self.mcp_names, self.mcp_tools = self.mcp_connector.get_stdio_tools()
+
+      print("--------------------------------")
+      print("Available MCP Tools:")
+      for name in self.mcp_names:
+        print(f"  - {name}")
+      print("--------------------------------")
+
       # セッションサービスを作成
       self.session_service = InMemorySessionService()
 
@@ -80,6 +83,7 @@ class SimpleAIAgent:
                 日本語で回答してください。
                 """,
         model=MODEL_NAME,
+        tools=self.mcp_tools,
       )
 
       # ランナーを作成
@@ -113,7 +117,7 @@ class SimpleAIAgent:
         return "ランナーが設定されていません"
 
       async for event in self.runner.run_async(user_id=self.user_id, session_id=self.session_id, new_message=content):
-        # print(f"  [Event] Author: {event.author}, Type: {type(event).__name__}, Final: {event.is_final_response()}, Content: {event.content}")
+        print(f"  [Event] Author: {event.author}, Type: {type(event).__name__}, Final: {event.is_final_response()}, Content: {event.content}")
 
         if event.is_final_response():
           if event.content and event.content.parts:
@@ -196,7 +200,7 @@ async def main():
     await agent.initialize(session_id, user_id)
 
     # インタラクティブチャットを開始
-    # await agent.interactive_chat()
+    await agent.interactive_chat()
 
   except Exception as e:
     print(f"❌ プログラムの実行中にエラーが発生しました: {e}")

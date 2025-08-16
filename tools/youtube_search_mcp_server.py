@@ -5,6 +5,10 @@ from mcp.server.fastmcp import FastMCP
 from pydantic import BaseModel, Field
 
 API_KEY = os.environ.get("GOOGLE_API_KEY", "")
+print("^^^^^^^^^^^^^^^^^^^^^^^^")
+print(API_KEY)
+print("^^^^^^^^^^^^^^^^^^^^^^^^")
+
 MAX_RESULTS = 10
 
 SEARCH_URL = "https://www.googleapis.com/youtube/v3/search"
@@ -31,9 +35,19 @@ mcp = FastMCP("youtube_search_mcp_server")
 
 @mcp.tool("youtube_search")
 async def youtube_search(query: str, max_results: int = 3) -> list[YouTubeSearchResult]:
+  """
+  Search for videos on YouTube.
+
+  Args:
+    query: The search query.
+    max_results: The maximum number of results to return.
+  """
   # ステップ1: 動画IDの取得（検索）
   search_params = {"part": "snippet", "q": query, "type": "video", "maxResults": max_results, "key": API_KEY}
   response = requests.get(SEARCH_URL, params=search_params).json()
+  if "items" not in response:
+    return []
+
   video_ids = [item["id"]["videoId"] for item in response["items"]]
 
   # ステップ2: 動画情報の取得（詳細）

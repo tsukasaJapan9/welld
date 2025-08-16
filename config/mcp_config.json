@@ -1,11 +1,12 @@
 {
   "mcpServers": {
     "youtube_search_mcp_server": {
-      "type": "stdio",
       "command": "/home/tsukasa/.pyenv/shims/uv",
       "args": [
+        "--directory",
+        "/home/tsukasa/works/welld/tools",
         "run",
-        "./tools/youtube_search_mcp_server.py"
+        "youtube_search_mcp_server.py"
       ],
       "env": {
         "GOOGLE_API_KEY": "GOOGLE_API_KEY"
