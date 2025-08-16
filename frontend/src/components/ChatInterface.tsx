@@ -336,19 +336,21 @@ export default function ChatInterface() {
   };
 
   return (
-    <div className="bg-white rounded-lg shadow-lg overflow-hidden">
-      <div className="bg-gradient-to-r from-blue-600 to-indigo-600 px-6 py-4">
-        <div className="flex items-center space-x-3">
-          <Bot className="h-6 w-6 text-white" />
-          <h2 className="text-xl font-semibold text-white">AI Assistant</h2>
-        </div>
-        {session && (
-          <div className="text-blue-100 text-sm mt-2">
-            Session ID: {session.sessionId.slice(0, 8)}...
+    <div className="flex flex-col h-full">
+      <div className="bg-gradient-to-r from-blue-600 to-indigo-600 px-6 py-3 shadow-sm">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center space-x-3">
+            <Bot className="h-5 w-5 text-white" />
+            <h2 className="text-lg font-semibold text-white">AI Assistant</h2>
           </div>
-        )}
+          {session && (
+            <div className="text-blue-100 text-xs">
+              ID: {session.sessionId.slice(0, 8)}...
+            </div>
+          )}
+        </div>
       </div>
-      <div className="h-[600px] overflow-y-auto p-4 space-y-4">
+      <div className="flex-1 overflow-y-auto p-4 space-y-4 bg-gray-100">
         {messages.map((message) => (
           <div
             key={message.id}
@@ -455,7 +457,7 @@ export default function ChatInterface() {
         )}
         <div ref={messagesEndRef} />
       </div>
-      <form onSubmit={handleSubmit} className="border-t px-4 py-3">
+      <form onSubmit={handleSubmit} className="bg-white px-4 py-3 shadow-lg">
         <div className="flex items-end space-x-2">
           <textarea
             ref={inputRef}
@@ -491,12 +493,6 @@ export default function ChatInterface() {
             {isRecording ? <MicOff className="h-5 w-5" /> : <Mic className="h-5 w-5" />}
           </button>
         </div>
-        {isRecording && (
-          <div className="mt-2 text-sm text-red-500 flex items-center">
-            <div className="w-2 h-2 bg-red-500 rounded-full animate-pulse mr-2"></div>
-            録音中... マイクボタンを押して停止
-          </div>
-        )}
       </form>
     </div>
   );
