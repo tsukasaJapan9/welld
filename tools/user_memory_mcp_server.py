@@ -26,12 +26,21 @@ class MemoryTag(Enum):
   PREFERENCE = "preference"
 
 
+class MemoryPriority(Enum):
+  """Memory priority levels"""
+
+  HIGH = "high"
+  MID = "mid"
+  LOW = "low"
+
+
 class MemoryEntry(BaseModel):
   """メモリエントリの構造"""
 
   key: str = Field(..., description="メモリのキー (YYYYMMDDHHMMSS形式)")
   tags: List[str] = Field(..., description="タグのリスト")
   content: str = Field(..., description="メモリの内容")
+  priority: str = Field(..., description="優先度 (high: 高, mid: 中, low: 低)")
   created_at: str = Field(..., description="作成日時")
   updated_at: str = Field(..., description="更新日時")
 
@@ -42,6 +51,7 @@ class MemorySearchResult(BaseModel):
   key: str = Field(..., description="メモリのキー")
   tags: List[str] = Field(..., description="タグ")
   content: str = Field(..., description="内容")
+  priority: str = Field(..., description="優先度 (high: 高, mid: 中, low: 低)")
   relevance_score: float = Field(..., description="関連性スコア")
 
 
@@ -61,7 +71,16 @@ class MemoryManager:
       try:
         with open(self.memory_file, "r", encoding="utf-8") as f:
           data = json.load(f)
-          self.memories = [MemoryEntry(**item) for item in data]
+          self.memories = []
+          for item in data:
+            # 過去のデータにpriorityフィールドがない場合は"mid"をデフォルト値として設定
+            if "priority" not in item:
+              item["priority"] = "mid"
+            try:
+              self.memories.append(MemoryEntry(**item))
+            except Exception as e:
+              print(f"Warning: Failed to load memory item: {e}, item: {item}")
+              continue
       except (json.JSONDecodeError, KeyError):
         self.memories = []
     else:
@@ -73,21 +92,25 @@ class MemoryManager:
     with open(self.memory_file, "w", encoding="utf-8") as f:
       json.dump([memory.model_dump() for memory in self.memories], f, ensure_ascii=False, indent=2)
 
-  def add_memory(self, key: str, tags: List[str], content: str) -> MemoryEntry:
+  def add_memory(self, key: str, tags: List[str], content: str, priority: str) -> MemoryEntry:
     """新しいメモリを追加"""
     now = datetime.datetime.now().isoformat()
-    memory = MemoryEntry(key=key, tags=tags, content=content, created_at=now, updated_at=now)
+    memory = MemoryEntry(key=key, tags=tags, content=content, priority=priority, created_at=now, updated_at=now)
     self.memories.append(memory)
     self._save_memories()
     return memory
 
-  def update_memory(self, key: str, tags: List[str], content: str) -> Optional[MemoryEntry]:
+  def update_memory(
+    self, key: str, tags: List[str], content: str, priority: Optional[str] = None
+  ) -> Optional[MemoryEntry]:
     """指定されたキーのメモリを更新"""
     now = datetime.datetime.now().isoformat()
     for memory in self.memories:
       if memory.key == key:
         memory.tags = tags
         memory.content = content
+        if priority is not None:
+          memory.priority = priority
         memory.updated_at = now
         self._save_memories()
         return memory
@@ -124,7 +147,13 @@ class MemoryManager:
 
       if relevance_score > 0:
         results.append(
-          MemorySearchResult(key=memory.key, tags=memory.tags, content=memory.content, relevance_score=relevance_score)
+          MemorySearchResult(
+            key=memory.key,
+            tags=memory.tags,
+            content=memory.content,
+            priority=memory.priority,
+            relevance_score=relevance_score,
+          )
         )
 
     # 関連性スコアでソート
@@ -156,7 +185,7 @@ mcp = FastMCP("user_memory_mcp_server", log_level="ERROR")
 
 
 @mcp.tool("add_memory")
-async def add_memory(key: str, tags: List[str], content: str) -> dict:
+async def add_memory(key: str, tags: List[str], content: str, priority: str) -> dict:
   """
   Add a new memory entry.
 
@@ -173,6 +202,7 @@ async def add_memory(key: str, tags: List[str], content: str) -> dict:
       tags (List[str]): List of tags. Only predefined tags are allowed.
                         Example: ["hobby", "learning"] or ["health", "habit", "preference"]
       content (str): Memory content. Provide detailed description.
+      priority (str): Priority level ("high", "mid", "low"). Must be specified.
 
   Returns:
       dict: Dictionary containing operation result
@@ -209,14 +239,19 @@ async def add_memory(key: str, tags: List[str], content: str) -> dict:
     if invalid_tags:
       return {"success": False, "message": f"無効なタグが含まれています: {invalid_tags}", "valid_tags": valid_tags}
 
-    memory = memory_manager.add_memory(key, tags, content)
+    # 優先度の検証
+    valid_priorities = [priority.value for priority in MemoryPriority]
+    if priority not in valid_priorities:
+      return {"success": False, "message": f"無効な優先度です: {priority}", "valid_priorities": valid_priorities}
+
+    memory = memory_manager.add_memory(key, tags, content, priority)
     return {"success": True, "message": "メモリが正常に追加されました", "memory": memory.model_dump()}
   except Exception as e:
     return {"success": False, "message": f"エラーが発生しました: {str(e)}"}
 
 
 @mcp.tool("update_memory")
-async def update_memory(key: str, tags: List[str], content: str) -> dict:
+async def update_memory(key: str, tags: List[str], content: str, priority: Optional[str] = None) -> dict:
   """
   Update a memory entry with the specified key.
 
@@ -233,6 +268,7 @@ async def update_memory(key: str, tags: List[str], content: str) -> dict:
       tags (List[str]): New list of tags. Only predefined tags are allowed.
                         Example: ["hobby", "learning", "goal"] or ["health", "habit", "preference"]
       content (str): New memory content. Replaces existing content.
+      priority (Optional[str]): New priority level ("high", "mid", "low"). If not specified, current priority is maintained.
 
   Returns:
       dict: Dictionary containing operation result
@@ -264,7 +300,13 @@ async def update_memory(key: str, tags: List[str], content: str) -> dict:
     if invalid_tags:
       return {"success": False, "message": f"無効なタグが含まれています: {invalid_tags}", "valid_tags": valid_tags}
 
-    memory = memory_manager.update_memory(key, tags, content)
+    # 優先度の検証（指定されている場合のみ）
+    if priority is not None:
+      valid_priorities = [priority.value for priority in MemoryPriority]
+      if priority not in valid_priorities:
+        return {"success": False, "message": f"無効な優先度です: {priority}", "valid_priorities": valid_priorities}
+
+    memory = memory_manager.update_memory(key, tags, content, priority)
     if memory:
       return {"success": True, "message": "メモリが正常に更新されました", "memory": memory.model_dump()}
     else:
@@ -616,6 +658,62 @@ async def get_available_tags() -> dict:
       "tags": tag_categories,
       "total_categories": len(tag_categories),
       "total_tags": sum(len(tags) for tags in tag_categories.values()),
+    }
+  except Exception as e:
+    return {"success": False, "message": f"エラーが発生しました: {str(e)}"}
+
+
+@mcp.tool("get_available_priorities")
+async def get_available_priorities() -> dict:
+  """
+  Retrieve a list of available priority levels. Provides 3 predefined priority levels.
+
+  When to use:
+      - When building user interfaces that need to display available priority options
+      - When implementing priority selection dropdowns or radio buttons
+      - When you need to validate user input against valid priority values
+      - When building priority management or configuration interfaces
+      - When you want to show users what priority levels are available for organizing memories
+      - When implementing priority-based filtering or sorting features
+      - When building help or documentation systems that explain the priority system
+
+  Args:
+      None (no parameters required)
+
+  Returns:
+      dict: Dictionary containing priority information
+          - success (bool): Operation success/failure
+          - priorities (List[str]): List of available priority levels (on success)
+              - "high": High priority (最重要)
+              - "mid": Medium priority (普通)
+              - "low": Low priority (低)
+          - total_priorities (int): Total number of priority levels
+          - message (str): Error message (on failure)
+
+  Raises:
+      Exception: When errors occur
+
+  Example:
+      >>> result = await get_available_priorities()
+      >>> if result["success"]:
+      ...     print(f"Available priorities: {result['priorities']}")
+      ...     print(f"Total priority levels: {result['total_priorities']}")
+      ... else:
+      ...     print(f"Error: {result['message']})
+
+  Note:
+      - Currently 3 priority levels are available: high, mid, low
+      - High priority memories are displayed first in search results
+      - Priority validation is performed automatically, invalid priorities are rejected
+      - Priority must be explicitly specified when creating new memories
+  """
+  try:
+    priorities = [priority.value for priority in MemoryPriority]
+
+    return {
+      "success": True,
+      "priorities": priorities,
+      "total_priorities": len(priorities),
     }
   except Exception as e:
     return {"success": False, "message": f"エラーが発生しました: {str(e)}"}
