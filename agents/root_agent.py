@@ -12,11 +12,12 @@ from datetime import datetime
 from typing import Optional
 
 from dotenv import load_dotenv
-from google.adk.agents import LlmAgent
+from google.adk.agents import Agent, LlmAgent
 from google.adk.agents.callback_context import CallbackContext
 from google.adk.models import LlmRequest, LlmResponse
 from google.adk.runners import Runner
 from google.adk.sessions import InMemorySessionService
+from google.adk.tools import agent_tool, google_search
 from google.adk.tools.mcp_tool.mcp_toolset import MCPToolset
 from google.genai import types
 
@@ -52,6 +53,16 @@ def before_model_modifier(callback_context: CallbackContext, llm_request: LlmReq
   return None
 
 
+search_agent = Agent(
+  model="gemini-2.0-flash",
+  name="SearchAgent",
+  instruction="""
+    You're a specialist in Google Search
+    """,
+  tools=[google_search],
+)
+
+
 class SimpleAIAgent:
   """シンプルなAIエージェントクラス"""
 
@@ -78,6 +89,7 @@ class SimpleAIAgent:
     try:
       # MCPツール(stdio)を取得
       self.mcp_names, self.mcp_tools = self.mcp_connector.get_stdio_tools()
+      self.mcp_tools.append(agent_tool.AgentTool(agent=search_agent))
 
       print("--------------------------------")
       print("Available MCP Tools:")
