@@ -123,8 +123,6 @@ export default function ChatInterface() {
       };
 
       recognition.onerror = (event) => {
-        console.error('❌ 音声認識エラー:', event.error);
-        
         // 無音エラーは無視して継続
         if (event.error === 'no-speech') {
           console.log('⚠️ 無音検出 - 継続します');
@@ -136,6 +134,8 @@ export default function ChatInterface() {
           console.log('⚠️ 中断エラー - 無視します');
           return;
         }
+        
+        console.error('❌ 音声認識エラー:', event.error);
 
         // 重大なエラーの場合のみ停止
         if (event.error === 'not-allowed' || event.error === 'audio-capture') {
