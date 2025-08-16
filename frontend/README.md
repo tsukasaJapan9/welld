@@ -1,96 +1,83 @@
-# Welld AI Chat Frontend
+# Welld Frontend
 
-Next.js 15.4を使用したシンプルなチャットUIです。
+This is the frontend application for Welld AI Agent.
 
-## 機能
+## Getting Started
 
-- 🤖 モダンなチャットインターフェース
-- 💬 リアルタイムメッセージ表示
-- 🎨 Tailwind CSSによる美しいデザイン
-- 📱 レスポンシブデザイン
-- ⚡ Next.js 15.4の最新機能
+First, install the dependencies:
 
-## セットアップ
-
-### 前提条件
-
-- Node.js 18.0以上
-- npm または yarn
-
-### インストール
-
-1. 依存関係をインストール
 ```bash
 npm install
+# or
+yarn install
 ```
 
-2. 開発サーバーを起動
+Then, run the development server:
+
 ```bash
 npm run dev
+# or
+yarn dev
 ```
 
-3. ブラウザで [http://localhost:3000](http://localhost:3000) を開く
+Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
 
-## 使用方法
+## Environment Variables
 
-1. チャットインターフェースが表示されます
-2. 入力フィールドにメッセージを入力
-3. 送信ボタンをクリックまたはEnterキーを押す
-4. AIアシスタントからの応答を確認
-
-## プロジェクト構造
-
-```
-frontend/
-├── src/
-│   ├── app/
-│   │   ├── api/
-│   │   │   └── chat/
-│   │   │       └── route.ts    # チャットAPIエンドポイント
-│   │   ├── globals.css         # グローバルスタイル
-│   │   ├── layout.tsx          # レイアウト
-│   │   └── page.tsx            # メインページ
-│   └── components/
-│       └── ChatInterface.tsx   # チャットUIコンポーネント
-├── public/                     # 静的ファイル
-├── package.json               # 依存関係
-└── README.md                  # このファイル
-```
-
-## 技術スタック
-
-- **Next.js 15.4**: Reactフレームワーク
-- **TypeScript**: 型安全性
-- **Tailwind CSS**: ユーティリティファーストCSS
-- **Lucide React**: 美しいアイコン
-- **ESLint**: コード品質
-
-## 開発
-
-### 利用可能なスクリプト
+Create a `.env.local` file in the frontend directory with the following content:
 
 ```bash
-npm run dev          # 開発サーバー起動
-npm run build        # プロダクションビルド
-npm run start        # プロダクションサーバー起動
-npm run lint         # ESLint実行
+# APIサーバーのURL
+NEXT_PUBLIC_API_URL=http://127.0.0.1:8000
 ```
 
-### カスタマイズ
+## Features
 
-- `src/components/ChatInterface.tsx` でチャットUIをカスタマイズ
-- `src/app/api/chat/route.ts` でAPIエンドポイントをカスタマイズ
-- `tailwind.config.js` でTailwind CSSをカスタマイズ
+- **Chat Interface**: AIエージェントとのチャット機能
+- **Memory Statistics**: 蓄積されたメモリの統計情報表示
+- **Responsive Design**: モバイルとデスクトップに対応したレスポンシブデザイン
+- **Sidebar Navigation**: 折りたたみ可能なサイドバーナビゲーション
 
-## 今後の改善予定
+## API Integration
 
-- [ ] 実際のAIエージェントとの接続
-- [ ] 会話履歴の保存
-- [ ] ユーザー認証
-- [ ] リアルタイム更新
-- [ ] ファイルアップロード
-- [ ] 音声入力
+The frontend communicates with the Welld API server running on port 8000. Make sure the API server is running before using the frontend.
 
-## ライセンス
+### Memory Statistics API
 
-このプロジェクトはMITライセンスの下で公開されています。
+- **Endpoint**: `/api/memory/stats`
+- **Method**: GET
+- **Description**: メモリの統計情報を取得
+- **Response**: 総メモリ数、タグ使用頻度、期間などの統計データ
+
+## Development
+
+### Project Structure
+
+```
+src/
+├── app/                 # Next.js App Router
+│   ├── api/            # API routes
+│   │   └── memory/     # Memory-related APIs
+│   ├── layout.tsx      # Root layout
+│   └── page.tsx        # Home page
+├── components/          # React components
+│   ├── ChatInterface.tsx    # Chat interface
+│   ├── Layout.tsx           # Layout wrapper
+│   ├── MemoryStats.tsx      # Memory statistics
+│   └── Sidebar.tsx          # Navigation sidebar
+└── globals.css         # Global styles
+```
+
+### Key Components
+
+- **ChatInterface**: AIエージェントとのチャット機能
+- **MemoryStats**: メモリ統計の表示と管理
+- **Sidebar**: ナビゲーションメニューとページ切り替え
+- **Layout**: ページレイアウトの管理
+
+## Dependencies
+
+- **Next.js**: React framework
+- **TypeScript**: Type safety
+- **Tailwind CSS**: Utility-first CSS framework
+- **Lucide React**: Icon library
