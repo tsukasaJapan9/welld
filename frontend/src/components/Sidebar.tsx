@@ -34,11 +34,9 @@ export default function Sidebar() {
 
       {/* サイドバー */}
       <div
-        className={`relative lg:static inset-y-0 left-0 z-40 bg-white shadow-lg transition-all duration-300 ease-in-out ${
-          isMobileOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
-        } ${
-          isCollapsed ? 'w-16' : 'w-64'
-        } fixed lg:relative`}
+        className={`relative lg:static inset-y-0 left-0 z-40 bg-white shadow-lg transition-all duration-150 ease-in-out ${isMobileOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
+          } ${isCollapsed ? 'w-16' : 'w-40'
+          } fixed lg:relative`}
       >
         {/* 折りたたみボタン（デスクトップのみ） */}
         <button
@@ -52,7 +50,7 @@ export default function Sidebar() {
           <div className={`${isCollapsed ? 'px-4' : 'px-6'} py-4`}>
             <div className={`flex items-center ${isCollapsed ? 'justify-center' : 'space-x-2'}`}>
               <span className="text-xl">🤖</span>
-              {!isCollapsed && <h2 className="text-xl font-bold text-gray-800">Welld AI</h2>}
+              {!isCollapsed && <h2 className="text-xl font-bold text-gray-800">Welld</h2>}
             </div>
           </div>
 
@@ -64,11 +62,10 @@ export default function Sidebar() {
                 <a
                   key={index}
                   href={item.href}
-                  className={`flex items-center ${isCollapsed ? 'justify-center' : 'space-x-3'} px-4 py-3 rounded-lg transition-colors ${
-                    item.active
-                      ? 'bg-blue-50 text-blue-600 font-medium'
-                      : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
-                  }`}
+                  className={`flex items-center ${isCollapsed ? 'justify-center' : 'space-x-3'} px-4 py-3 rounded-lg transition-colors ${item.active
+                    ? 'bg-blue-50 text-blue-600 font-medium'
+                    : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
+                    }`}
                   onClick={() => setIsMobileOpen(false)}
                   title={isCollapsed ? item.label : undefined}
                 >
