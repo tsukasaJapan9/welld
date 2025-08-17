@@ -56,25 +56,56 @@ def before_model_modifier(callback_context: CallbackContext, llm_request: LlmReq
     llm_request.config.system_instruction = new_instruction
 
   # 記憶を読み出してプロンプトに追加する
-  with open(USER_MEMORY_FILE, "r", encoding="utf-8") as f:
-    memories = json.load(f)
-  # high or midを抽出
-  memories = [memory for memory in memories if memory["priority"] == "high" or memory["priority"] == "mid"]
-  memory_instruction = """
-# メモリ
-以下はユーザに関するメモリ情報です。
-毎回参照するとしつこいので会話の流れに合うときだけ参照してください。
+#   with open(USER_MEMORY_FILE, "r", encoding="utf-8") as f:
+#     memories = json.load(f)
+#   # high or midを抽出
+#   memories = [memory for memory in memories if memory["priority"] == "high" or memory["priority"] == "mid"]
+#   memory_instruction = """
+# # メモリ
+# 以下はユーザに関するメモリ情報です。
+# 毎回参照するとしつこいので会話の流れに合うときだけ参照してください。
 
-  """
-  for memory in memories:
-    memory_instruction += f"{memory['tags']}: {memory['content']}\n"
+#   """
+#   for memory in memories:
+#     memory_instruction += f"{memory['tags']}: {memory['content']}\n"
 
-  llm_request.config.system_instruction = llm_request.config.system_instruction + "\n" + memory_instruction
+#   llm_request.config.system_instruction = llm_request.config.system_instruction + "\n" + memory_instruction
 
-  print(llm_request.config.system_instruction)
+#   print(llm_request.config.system_instruction)
 
   return None
 
+
+system_instruction = """
+# あなたの役割
+あなたは親切で役立つAIアシスタントです。
+ユーザーの質問や要望に対して、丁寧で分かりやすい回答を提供してください。
+
+# ルール
+- 日本語で回答してください。
+
+# メモリ使用ガイドライン
+会話の連続性やコンテキスト保持を向上させるために、メモリツールを最大限に活用してください。
+
+## メモリを保存するためのツール
+- **add_memory**: 重要な会話のやり取り、重要な意思決定、ユーザーの好みなど今後の会話で覚えておく価値のあるコンテキストを保存する。
+- ユーザはパーソナライズされたコミュニケーションを望んでいるので、積極的にこのツールを使うこと。
+- 具体的にはユーザの趣味、個人情報、性格、習慣、学習、目標、人間関係、趣向、あなたへの指示などです。
+- 一時的な情報よりも、長期的に意味のある情報に焦点を当てること。
+
+## メモリを更新するためのツール
+- **update_memory**: 過去のメモリに対して、新しい重要情報をと統合し、メモリの内容を再構築する。
+- 進行中のプロジェクトや関係に意味のある進展があったときに更新する
+- 関連情報を統合して、時間を通じて一貫したコンテキストを維持する
+
+## メモリを検索するためのツール
+- **search_memories**: 会話の開始時に過去ののメモリやコンテキストを検索する。
+- ユーザーをより良く支援するために過去の背景情報が必要なときに使用する
+- ユーザはパーソナライズされたコミュニケーションを望んでいるので、積極的にこのツールを使うこと。
+
+これらのツールは、会話の連続性を構築し、よりパーソナライズされた支援を提供するために使用してください。
+エラー防止や意図推測のための仕組みではありません。
+"""
 
 search_agent = Agent(
   model="gemini-2.0-flash",
@@ -132,21 +163,7 @@ class SimpleAIAgent:
       self.agent = LlmAgent(
         name="SimpleAI",
         description="AIエージェントWelld",
-        instruction="""
-                # あなたの役割
-                あなたは親切で役立つAIアシスタントです。
-                ユーザーの質問や要望に対して、丁寧で分かりやすい回答を提供してください。
-
-                # ルール
-                - 日本語で回答してください。
-              
-                # 記憶について
-                あなたは記憶モジュールを持っており、user_memory_mcp_serverというツールで実装されています。
-                特にユーザの趣味趣向や性格、興味関心、習慣、健康、学習、人間関係、目標、感情、場所、時間に関する情報が得られた場合は
-                必ずMCPのadd_memory関数を呼び出すことでメモリに保存してください。
-                メモリに保存する際はユーザに承認を求める必要はありません。勝手に保存してください。
-                そして積極的にメモリの情報を参照し、ユーザの趣向に合わせた回答をしてください。
-                """,
+        instruction=system_instruction,
         model=MODEL_NAME,
         tools=self.mcp_tools,
         before_model_callback=before_model_modifier,
