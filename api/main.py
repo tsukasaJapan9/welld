@@ -12,7 +12,7 @@ import sys
 import traceback
 import uuid
 from contextlib import asynccontextmanager
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 from dotenv import load_dotenv
 
@@ -42,6 +42,9 @@ DEFAULT_USER_ID = "default_user"
 
 # メモリファイルパス
 USER_MEMORY_FILE = os.environ.get("USER_MEMORY_FILE", "memory/user_memory.json")
+
+# スケジュールファイルパス
+USER_SCHEDULE_FILE = os.environ.get("USER_SCHEDULE_FILE", "memory/user_schedule.json")
 
 
 @asynccontextmanager
@@ -101,7 +104,19 @@ class MemoryStatsResponse(BaseModel):
   message: Optional[str] = Field(None, description="エラーメッセージ")
 
 
-async def get_memory_stats_from_file() -> Optional[Dict[str, Any]]:
+class Schedule(BaseModel):
+  deadline: str = Field(..., description="予定の期限")
+  content: str = Field(..., description="予定の内容")
+  priority: str = Field(..., description="優先度 (high, mid, low)")
+
+
+class ScheduleResponse(BaseModel):
+  success: bool = Field(..., description="操作の成功/失敗")
+  schedules: Optional[List[Schedule]] = Field(None, description="スケジュール一覧")
+  message: Optional[str] = Field(None, description="エラーメッセージ")
+
+
+def get_memory_stats_from_file() -> Optional[Dict[str, Any]]:
   """メモリファイルから直接統計情報を取得"""
   try:
     # メモリファイルのパスを構築
@@ -235,7 +250,7 @@ async def get_memory_stats():
   """メモリ統計エンドポイント"""
   try:
     # MCPサーバーからメモリ統計を取得
-    stats = await get_memory_stats_from_file()
+    stats = get_memory_stats_from_file()
 
     if stats:
       # MCPサーバーから取得したデータを使用
@@ -295,6 +310,40 @@ async def list_sessions():
   except Exception as e:
     logger.error(f"❌ セッション一覧取得中にエラーが発生: {e}")
     raise HTTPException(status_code=500, detail=f"セッション一覧取得中にエラーが発生しました: {str(e)}")
+
+
+@app.get("/api/schedule", response_model=ScheduleResponse)
+async def get_schedules():
+  """スケジュール一覧エンドポイント"""
+  try:
+    # USER_SCHEDULE_FILEから実際のデータを読み込み
+    try:
+      with open(USER_SCHEDULE_FILE, "r", encoding="utf-8") as f:
+        schedule_data = json.load(f)
+
+      schedules = []
+      for schedule_entry in schedule_data.values():
+        # YYYYMMDDHHMM形式からYYYY-MM-DD形式に変換
+        deadline_str = schedule_entry["deadline"]
+        formatted_deadline = f"{deadline_str[:4]}-{deadline_str[4:6]}-{deadline_str[6:8]}"
+
+        schedules.append(
+          Schedule(deadline=formatted_deadline, content=schedule_entry["content"], priority=schedule_entry["priority"])
+        )
+
+      logger.info(f"📅 スケジュールデータを読み込みました: {len(schedules)}件")
+      return ScheduleResponse(success=True, schedules=schedules, message=None)
+
+    except FileNotFoundError:
+      logger.warning("📅 スケジュールファイルが見つかりません。空のリストを返します")
+      return ScheduleResponse(success=True, schedules=[], message=None)
+    except json.JSONDecodeError:
+      logger.warning("📅 スケジュールファイルの形式が不正です。空のリストを返します")
+      return ScheduleResponse(success=True, schedules=[], message=None)
+
+  except Exception as e:
+    logger.error(f"❌ スケジュール取得中にエラーが発生: {e}")
+    return ScheduleResponse(success=False, schedules=None, message=f"スケジュールの取得に失敗しました: {str(e)}")
 
 
 if __name__ == "__main__":
