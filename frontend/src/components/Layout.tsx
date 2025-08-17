@@ -13,7 +13,7 @@ export default function Layout({ children, currentPage, onPageChange }: LayoutPr
   return (
     <div className="flex h-screen bg-gray-50">
       <Sidebar currentPage={currentPage} onPageChange={onPageChange} />
-      <div className="flex-1 flex flex-col overflow-hidden">
+      <div className="flex-1 flex flex-col overflow-auto">
         {children}
       </div>
     </div>
