@@ -60,6 +60,15 @@ def before_model_modifier(callback_context: CallbackContext, llm_request: LlmReq
     new_instruction = f"{original_instruction}\n\n# 現在時刻\n{current_time}\n"
     llm_request.config.system_instruction = new_instruction
 
+    # スケジュールを読み出してプロンプトに追加する
+    with open(USER_SCHEDULE_FILE, "r", encoding="utf-8") as f:
+      schedules = json.load(f)
+    now = datetime.now(timezone(timedelta(hours=9))).strftime("%Y%m%d")
+    schedules = [schedule for schedule in schedules.values() if schedule["deadline"][:8] >= now]
+    schedule_instruction = ""
+    for schedule in schedules:
+      schedule_instruction += f"{schedule['deadline']}: {schedule['content']}\n"
+    
     # 記憶を読み出してプロンプトに追加する
     with open(USER_MEMORY_FILE, "r", encoding="utf-8") as f:
       memories = json.load(f)
@@ -89,6 +98,9 @@ def before_model_modifier(callback_context: CallbackContext, llm_request: LlmReq
 
 ## その他の情報
 {other_information}
+
+# スケジュール
+{schedule_instruction}
 """
     personal_information_str = ""
     for memory in personal_information:
@@ -108,10 +120,11 @@ def before_model_modifier(callback_context: CallbackContext, llm_request: LlmReq
         personal_information=personal_information_str,
         ai_instruction=ai_instruction_str,
         other_information=other_information_str,
+        schedule_instruction=schedule_instruction,
       )
     )
 
-    # print(llm_request.config.system_instruction)
+    print(llm_request.config.system_instruction)
 
   return None
 
