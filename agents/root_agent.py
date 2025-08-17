@@ -108,7 +108,7 @@ def before_model_modifier(callback_context: CallbackContext, llm_request: LlmReq
       )
     )
 
-    print(llm_request.config.system_instruction)
+    # print(llm_request.config.system_instruction)
 
   return None
 
