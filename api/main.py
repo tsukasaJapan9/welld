@@ -9,9 +9,10 @@ import json
 import logging
 import os
 import sys
+import traceback
 import uuid
 from contextlib import asynccontextmanager
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 from dotenv import load_dotenv
 
@@ -32,7 +33,7 @@ load_dotenv()
 
 
 # ログ設定
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
 
 # グローバル変数
@@ -41,6 +42,9 @@ DEFAULT_USER_ID = "default_user"
 
 # メモリファイルパス
 USER_MEMORY_FILE = os.environ.get("USER_MEMORY_FILE", "memory/user_memory.json")
+
+# スケジュールファイルパス
+USER_SCHEDULE_FILE = os.environ.get("USER_SCHEDULE_FILE", "memory/user_schedule.json")
 
 
 @asynccontextmanager
@@ -100,7 +104,19 @@ class MemoryStatsResponse(BaseModel):
   message: Optional[str] = Field(None, description="エラーメッセージ")
 
 
-async def get_memory_stats_from_mcp() -> Optional[Dict[str, Any]]:
+class Schedule(BaseModel):
+  deadline: str = Field(..., description="予定の期限")
+  content: str = Field(..., description="予定の内容")
+  priority: str = Field(..., description="優先度 (high, mid, low)")
+
+
+class ScheduleResponse(BaseModel):
+  success: bool = Field(..., description="操作の成功/失敗")
+  schedules: Optional[List[Schedule]] = Field(None, description="スケジュール一覧")
+  message: Optional[str] = Field(None, description="エラーメッセージ")
+
+
+def get_memory_stats_from_file() -> Optional[Dict[str, Any]]:
   """メモリファイルから直接統計情報を取得"""
   try:
     # メモリファイルのパスを構築
@@ -115,7 +131,7 @@ async def get_memory_stats_from_mcp() -> Optional[Dict[str, Any]]:
 
     # メモリファイルを読み込み
     with open(memory_file_path, "r", encoding="utf-8") as f:
-      memories: list = json.load(f)
+      memories: Any = json.load(f)
 
     # 統計情報を計算
     total_memories = len(memories)
@@ -127,36 +143,45 @@ async def get_memory_stats_from_mcp() -> Optional[Dict[str, Any]]:
         "key_range": {"earliest": None, "latest": None},
         "tag_counts": {},
         "most_used_tags": [],
+        "latest_memory_contents": [],
       }
 
     # タグの使用頻度をカウント
     tag_counts: Dict[str, int] = {}
-    keys: list = []
+    created_at_list: list[str] = []
 
-    for memory in memories:
+    for memory in memories.values():
       # タグのカウント
-      for tag in memory.get("tags", []):
-        tag_counts[tag] = tag_counts.get(tag, 0) + 1
+      tags = memory.get("tags", [])
+      if isinstance(tags, list):
+        for tag in tags:
+          if isinstance(tag, str):
+            tag_counts[tag] = tag_counts.get(tag, 0) + 1
+      created_at = memory.get("created_at", "")
+      if isinstance(created_at, str):
+        created_at_list.append(created_at)
 
-      # キーの収集
-      keys.append(memory.get("key", ""))
-
-    # キーの範囲を計算
-    valid_keys: list = [k for k in keys if k and len(k) == 14 and k.isdigit()]
-    if valid_keys:
-      valid_keys.sort()
-      key_range: Dict[str, Optional[str]] = {"earliest": valid_keys[0], "latest": valid_keys[-1]}
+    if created_at_list:
+      created_at_list.sort()
+      key_range: Dict[str, Optional[str]] = {"earliest": created_at_list[0], "latest": created_at_list[-1]}
     else:
       key_range: Dict[str, Optional[str]] = {"earliest": None, "latest": None}
 
     # 最も使用されているタグ（上位5位）
     most_used_tags: list = sorted(tag_counts.items(), key=lambda x: x[1], reverse=True)[:5]
 
+    # 最新のメモリ内容
+    latest_memory_contents: list[str] = []
+    for memory in memories.values():
+      latest_memory_contents.append(memory.get("content", ""))
+    latest_memory_contents = latest_memory_contents[:10]
+
     stats = {
       "total_memories": total_memories,
       "key_range": key_range,
       "tag_counts": tag_counts,
       "most_used_tags": most_used_tags,
+      "latest_memory_contents": latest_memory_contents,
     }
 
     logger.info(f"✅ メモリファイルから統計情報を正常に取得しました: {total_memories}件")
@@ -169,6 +194,7 @@ async def get_memory_stats_from_mcp() -> Optional[Dict[str, Any]]:
     logger.error(f"❌ メモリファイルのJSON形式が不正です: {e}")
     return None
   except Exception as e:
+    traceback.print_exc()
     logger.error(f"❌ メモリファイルの読み込み中にエラーが発生: {e}")
     return None
 
@@ -224,27 +250,29 @@ async def get_memory_stats():
   """メモリ統計エンドポイント"""
   try:
     # MCPサーバーからメモリ統計を取得
-    mcp_stats = await get_memory_stats_from_mcp()
+    stats = get_memory_stats_from_file()
 
-    if mcp_stats:
+    if stats:
       # MCPサーバーから取得したデータを使用
       logger.info("📊 MCPサーバーからメモリ統計を取得しました")
-      return MemoryStatsResponse(success=True, stats=mcp_stats, message=None)
+      return MemoryStatsResponse(success=True, stats=stats, message=None)
     else:
       # フォールバック: シミュレーションデータ
       fallback_stats = {
-        "total_memories": 25,
-        "key_range": {"earliest": "20240101000000", "latest": "20240115120000"},
+        "total_memories": 0,
+        "key_range": {"earliest": None, "latest": None},
         "tag_counts": {
-          "hobby": 8,
-          "learning": 6,
-          "health": 4,
-          "personality": 3,
-          "habit": 2,
-          "relationship": 1,
-          "goal": 1,
+          "hobby": 0,
+          "learning": 0,
+          "personal_information": 0,
+          "personality": 0,
+          "habit": 0,
+          "goal": 0,
+          "preference": 0,
+          "instruction_for_ai": 0,
         },
-        "most_used_tags": [["hobby", 8], ["learning", 6], ["health", 4], ["personality", 3], ["habit", 2]],
+        "most_used_tags": [],
+        "latest_memory_contents": [],
       }
 
       logger.info("📊 フォールバックデータを使用してメモリ統計を返しました")
@@ -282,6 +310,40 @@ async def list_sessions():
   except Exception as e:
     logger.error(f"❌ セッション一覧取得中にエラーが発生: {e}")
     raise HTTPException(status_code=500, detail=f"セッション一覧取得中にエラーが発生しました: {str(e)}")
+
+
+@app.get("/api/schedule", response_model=ScheduleResponse)
+async def get_schedules():
+  """スケジュール一覧エンドポイント"""
+  try:
+    # USER_SCHEDULE_FILEから実際のデータを読み込み
+    try:
+      with open(USER_SCHEDULE_FILE, "r", encoding="utf-8") as f:
+        schedule_data = json.load(f)
+
+      schedules = []
+      for schedule_entry in schedule_data.values():
+        # YYYYMMDDHHMM形式からYYYY-MM-DD形式に変換
+        deadline_str = schedule_entry["deadline"]
+        formatted_deadline = f"{deadline_str[:4]}-{deadline_str[4:6]}-{deadline_str[6:8]}"
+
+        schedules.append(
+          Schedule(deadline=formatted_deadline, content=schedule_entry["content"], priority=schedule_entry["priority"])
+        )
+
+      logger.info(f"📅 スケジュールデータを読み込みました: {len(schedules)}件")
+      return ScheduleResponse(success=True, schedules=schedules, message=None)
+
+    except FileNotFoundError:
+      logger.warning("📅 スケジュールファイルが見つかりません。空のリストを返します")
+      return ScheduleResponse(success=True, schedules=[], message=None)
+    except json.JSONDecodeError:
+      logger.warning("📅 スケジュールファイルの形式が不正です。空のリストを返します")
+      return ScheduleResponse(success=True, schedules=[], message=None)
+
+  except Exception as e:
+    logger.error(f"❌ スケジュール取得中にエラーが発生: {e}")
+    return ScheduleResponse(success=False, schedules=None, message=f"スケジュールの取得に失敗しました: {str(e)}")
 
 
 if __name__ == "__main__":

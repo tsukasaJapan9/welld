@@ -44,6 +44,9 @@ USER_ID = "test_user"
 # メモリファイルパス
 USER_MEMORY_FILE = os.environ.get("USER_MEMORY_FILE", "memory/user_memory.json")
 
+# スケジュールファイルパス
+USER_SCHEDULE_FILE = os.environ.get("USER_SCHEDULE_FILE", "memory/user_schedule.json")
+
 
 def before_model_modifier(callback_context: CallbackContext, llm_request: LlmRequest) -> Optional[LlmResponse]:
   """Inspects/modifies the LLM request or skips the call."""
@@ -57,6 +60,15 @@ def before_model_modifier(callback_context: CallbackContext, llm_request: LlmReq
     new_instruction = f"{original_instruction}\n\n# 現在時刻\n{current_time}\n"
     llm_request.config.system_instruction = new_instruction
 
+    # スケジュールを読み出してプロンプトに追加する
+    with open(USER_SCHEDULE_FILE, "r", encoding="utf-8") as f:
+      schedules = json.load(f)
+    now = datetime.now(timezone(timedelta(hours=9))).strftime("%Y%m%d")
+    schedules = [schedule for schedule in schedules.values() if schedule["deadline"][:8] >= now]
+    schedule_instruction = ""
+    for schedule in schedules:
+      schedule_instruction += f"{schedule['deadline']}: {schedule['content']}\n"
+    
     # 記憶を読み出してプロンプトに追加する
     with open(USER_MEMORY_FILE, "r", encoding="utf-8") as f:
       memories = json.load(f)
@@ -86,6 +98,9 @@ def before_model_modifier(callback_context: CallbackContext, llm_request: LlmReq
 
 ## その他の情報
 {other_information}
+
+# スケジュール
+{schedule_instruction}
 """
     personal_information_str = ""
     for memory in personal_information:
@@ -105,10 +120,11 @@ def before_model_modifier(callback_context: CallbackContext, llm_request: LlmReq
         personal_information=personal_information_str,
         ai_instruction=ai_instruction_str,
         other_information=other_information_str,
+        schedule_instruction=schedule_instruction,
       )
     )
 
-    # print(llm_request.config.system_instruction)
+    print(llm_request.config.system_instruction)
 
   return None
 
@@ -128,15 +144,19 @@ system_instruction = """
 会話の連続性やコンテキスト保持を向上させるために、メモリツールを最大限に活用してください。
 
 ## メモリのタグ一覧
-- **get_tag_list**: メモリのタグ一覧を取得する。
+- **get_memory_tag_list**: メモリのタグ一覧を取得する。
 - メモリを保存したり、更新する際はまずタグ一覧を取得して適切なタグを指定すること。
 
 ## メモリの優先度一覧
-- **get_priority_list**: メモリの優先度一覧を取得する。
+- **get_memory_priority_list**: メモリの優先度一覧を取得する。
 - メモリを保存したり、更新する際はまず優先度一覧を取得して適切な優先度を指定すること。
 
 ## メモリを保存するためのツール
 - **add_memory**: 重要な会話のやり取り、重要な意思決定、ユーザーの好みなど今後の会話で覚えておく価値のあるコンテキストを保存する。
+- メモリを保存する際は、以下の手順で行うこと。
+  - get_memory_tag_listを使ってタグ一覧を取得し適切なタグを選択
+  - get_memory_priority_listを使って優先度一覧を取得し適切な優先度を選択
+  - add_memoryを使ってメモリを保存する
 - ユーザはパーソナライズされたコミュニケーションを望んでいるので、積極的にこのツールを使うこと。
 - 具体的にはユーザの趣味、個人情報、性格、習慣、学習、目標、人間関係、趣向、あなたへの指示などです。
 - 一時的な情報よりも、長期的に意味のある情報に焦点を当てること。
@@ -160,6 +180,38 @@ system_instruction = """
 
 これらのツールは、会話の連続性を構築し、よりパーソナライズされた支援を提供するために使用してください。
 エラー防止や意図推測のための仕組みではありません。
+
+# ユーザスケジュール管理ガイドライン
+ユーザのスケジュールを把握し、適切なリマインド、フォローアップを行うために、スケジュールツールを最大限に活用してください。
+
+## スケジュールの優先度一覧
+- **get_schedule_priority_list**: スケジュールの優先度一覧を取得する。
+- スケジュールを保存したり、更新する際はまず優先度一覧を取得して適切な優先度を指定すること。
+
+## スケジュールを保存するためのツール
+- **add_schedule**: ユーザの将来的なスケジュールを保存する。
+- スケジュールを保存する際は、以下の手順で行うこと。
+  - get_schedule_priority_listを使って優先度一覧を取得し適切な優先度を選択
+  - add_scheduleを使ってスケジュールを保存する
+- ユーザがスケジュールを忘れないようにあなたが適切にスケジュールを管理すること。
+
+## スケジュールを検索するためのツール
+- **search_schedules**: スケジュールを検索する。
+- ユーザがスケジュールを忘れないようにこまめに検索してリマインドすること。
+- ユーザに対してスケジュールのための準備などを促すこと。
+
+## スケジュールを更新するためのツール
+- **update_schedule**: 過去のスケジュールに対して、新しい重要情報をと統合し、スケジュールの内容を再構築する。
+- このツールを使う場合、まずはsearch_schedulesを使って関連スケジュールのkeyを取得し、そのkeyを使ってupdate_scheduleを呼び出すこと。
+- スケジュールの内容が変更になった場合はこのツールを使って更新すること。
+
+## スケジュールを削除するためのツール
+- **delete_schedule**: 不要なスケジュールを削除する。
+- このツールを使う場合、まずはsearch_schedulesを使って関連スケジュールのkeyを取得し、そのkeyを使ってdelete_scheduleを呼び出すこと。
+- 重複するスケジュールがある場合、優先度が低いスケジュールを削除すること。
+- 一ヶ月以上前の予定は適宜削除すること。
+
+これらのツールは、ユーザの予定のリマインド、及び予定の準備を促すことに使ってください。
 """
 
 search_agent = Agent(
