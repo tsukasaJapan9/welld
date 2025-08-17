@@ -5,8 +5,8 @@ import Sidebar from './Sidebar';
 
 interface LayoutProps {
   children: ReactNode;
-  currentPage: 'chat' | 'memory';
-  onPageChange: (page: 'chat' | 'memory') => void;
+  currentPage: 'chat' | 'memory' | 'schedule';
+  onPageChange: (page: 'chat' | 'memory' | 'schedule') => void;
 }
 
 export default function Layout({ children, currentPage, onPageChange }: LayoutProps) {

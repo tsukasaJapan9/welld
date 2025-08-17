@@ -1,11 +1,11 @@
 'use client';
 
 import { useState } from 'react';
-import { Menu, X, MessageSquare, Settings, HelpCircle, History, ChevronLeft, ChevronRight, Database } from 'lucide-react';
+import { Menu, X, MessageSquare, Settings, HelpCircle, History, ChevronLeft, ChevronRight, Database, Calendar } from 'lucide-react';
 
 interface SidebarProps {
-  currentPage: 'chat' | 'memory';
-  onPageChange: (page: 'chat' | 'memory') => void;
+  currentPage: 'chat' | 'memory' | 'schedule';
+  onPageChange: (page: 'chat' | 'memory' | 'schedule') => void;
 }
 
 export default function Sidebar({ currentPage, onPageChange }: SidebarProps) {
@@ -24,6 +24,12 @@ export default function Sidebar({ currentPage, onPageChange }: SidebarProps) {
       label: 'メモリ',
       page: 'memory' as const,
       active: currentPage === 'memory'
+    },
+    {
+      icon: Calendar,
+      label: '予定',
+      page: 'schedule' as const,
+      active: currentPage === 'schedule'
     },
     {
       icon: History,
@@ -45,7 +51,7 @@ export default function Sidebar({ currentPage, onPageChange }: SidebarProps) {
     },
   ];
 
-  const handleMenuClick = (page: 'chat' | 'memory') => {
+  const handleMenuClick = (page: 'chat' | 'memory' | 'schedule') => {
     onPageChange(page);
     setIsMobileOpen(false);
   };
