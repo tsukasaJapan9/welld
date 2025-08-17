@@ -5,10 +5,6 @@ from mcp.server.fastmcp import FastMCP
 from pydantic import BaseModel, Field
 
 API_KEY = os.environ.get("GOOGLE_API_KEY", "")
-print("^^^^^^^^^^^^^^^^^^^^^^^^")
-print(API_KEY)
-print("^^^^^^^^^^^^^^^^^^^^^^^^")
-
 MAX_RESULTS = 10
 
 SEARCH_URL = "https://www.googleapis.com/youtube/v3/search"

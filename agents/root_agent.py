@@ -5,10 +5,13 @@ Simple AI Agent using Google ADK
 """
 
 import asyncio
+import json
 import logging
+import os
+import random
 import uuid
 import warnings
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 from dotenv import load_dotenv
@@ -21,6 +24,7 @@ from google.adk.tools import agent_tool, google_search
 from google.adk.tools.mcp_tool.mcp_toolset import MCPToolset
 from google.genai import types
 
+from tools.user_memory_mcp_server import MemoryTag
 from tools.utils.mcp_connect import MCPConnector
 
 load_dotenv()
@@ -33,25 +37,130 @@ warnings.filterwarnings("ignore")
 logging.basicConfig(level=logging.ERROR)
 
 MODEL_NAME = "gemini-2.5-flash"
+# MODEL_NAME = "gemini-2.5-pro"
 APP_NAME = "SimpleAI"
 USER_ID = "test_user"
+
+# メモリファイルパス
+USER_MEMORY_FILE = os.environ.get("USER_MEMORY_FILE", "memory/user_memory.json")
 
 
 def before_model_modifier(callback_context: CallbackContext, llm_request: LlmRequest) -> Optional[LlmResponse]:
   """Inspects/modifies the LLM request or skips the call."""
-  agent_name = callback_context.agent_name
   # これでシステムプロンプトを見ることができる
   # print(llm_request.config.system_instruction)
   original_instruction = llm_request.config.system_instruction
 
   # 時刻情報を付け加える
   if original_instruction:
-    current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    new_instruction = f"{original_instruction}\n\nCurrent time: {current_time}"
+    current_time = datetime.now(timezone(timedelta(hours=9))).strftime("%Y-%m-%d %H:%M:%S")
+    new_instruction = f"{original_instruction}\n\n# 現在時刻\n{current_time}\n"
     llm_request.config.system_instruction = new_instruction
+
+    # 記憶を読み出してプロンプトに追加する
+    with open(USER_MEMORY_FILE, "r", encoding="utf-8") as f:
+      memories = json.load(f)
+    memories = [memory for memory in memories.values()]
+    # パーソナルな情報を抽出
+    personal_information = [memory for memory in memories if MemoryTag.PERSONAL_INFORMATION.value in memory["tags"]]
+    # AIへの指示を抽出
+    ai_instruction = [memory for memory in memories if MemoryTag.INSTRUCTION_FOR_AI.value in memory["tags"]]
+    # その他の情報をランダムに抽出
+    other_information = [
+      memory
+      for memory in memories
+      if MemoryTag.PERSONAL_INFORMATION.value not in memory["tags"]
+      and MemoryTag.INSTRUCTION_FOR_AI.value not in memory["tags"]
+    ]
+    other_information = random.sample(other_information, min(len(other_information), 10))
+    memory_instruction = """
+# ユーザの背景情報
+以下はユーザに関する背景情報です。
+毎回参照するとしつこいので会話の流れに合うときだけ参照してください。
+
+## パーソナルな情報
+{personal_information}
+
+## AIへの指示
+{ai_instruction}
+
+## その他の情報
+{other_information}
+"""
+    personal_information_str = ""
+    for memory in personal_information:
+      print(memory)
+      personal_information_str += f"{memory['tags']}: {memory['content']}\n"
+    other_information_str = ""
+    for memory in other_information:
+      other_information_str += f"{memory['tags']}: {memory['content']}\n"
+    ai_instruction_str = ""
+    for memory in ai_instruction:
+      ai_instruction_str += f"{memory['tags']}: {memory['content']}\n"
+
+    llm_request.config.system_instruction = (
+      llm_request.config.system_instruction
+      + "\n"
+      + memory_instruction.format(
+        personal_information=personal_information_str,
+        ai_instruction=ai_instruction_str,
+        other_information=other_information_str,
+      )
+    )
+
+    # print(llm_request.config.system_instruction)
 
   return None
 
+
+system_instruction = """
+# あなたの役割
+あなたは親切で役立つAIアシスタントです。
+ユーザーの質問や要望に対して、丁寧で分かりやすい回答を提供してください。
+またあなたはユーザとの会話を通してユーザに関する情報をメモリに蓄積し、それを検索することでユーザに
+パーソナライズされたコミュニケーションを行います。
+またユーザの背景情報も適宜参照してください。
+
+# ルール
+- 日本語で回答してください。
+
+# メモリ使用ガイドライン
+会話の連続性やコンテキスト保持を向上させるために、メモリツールを最大限に活用してください。
+
+## メモリのタグ一覧
+- **get_tag_list**: メモリのタグ一覧を取得する。
+- メモリを保存したり、更新する際はまずタグ一覧を取得して適切なタグを指定すること。
+
+## メモリの優先度一覧
+- **get_priority_list**: メモリの優先度一覧を取得する。
+- メモリを保存したり、更新する際はまず優先度一覧を取得して適切な優先度を指定すること。
+
+## メモリを保存するためのツール
+- **add_memory**: 重要な会話のやり取り、重要な意思決定、ユーザーの好みなど今後の会話で覚えておく価値のあるコンテキストを保存する。
+- ユーザはパーソナライズされたコミュニケーションを望んでいるので、積極的にこのツールを使うこと。
+- 具体的にはユーザの趣味、個人情報、性格、習慣、学習、目標、人間関係、趣向、あなたへの指示などです。
+- 一時的な情報よりも、長期的に意味のある情報に焦点を当てること。
+
+## メモリを検索するためのツール
+- **search_memories**: 会話の開始時に過去ののメモリやコンテキストを検索する。
+- ユーザーをより良く支援するために過去の背景情報が必要なときに使用する
+- ユーザはパーソナライズされたコミュニケーションを望んでいるので、積極的にこのツールを使うこと。
+
+## メモリを更新するためのツール
+- **update_memory**: 過去のメモリに対して、新しい重要情報をと統合し、メモリの内容を再構築する。
+- このツールを使う場合、まずはsearch_memoriesを使って関連メモリのkeyを取得し、そのkeyを使ってupdate_memoryを呼び出すこと。
+- 進行中のプロジェクトや関係に意味のある進展があったときに更新する
+- 関連情報を統合して、時間を通じて一貫したコンテキストを維持する
+
+## メモリを削除するためのツール
+- **delete_memory**: 不要なメモリを削除する。
+- 背反する指示が含まれている場合、優先度が低いメモリを削除すること。
+- しばらく参照されていない情報がある場合、メモリを削除すること。
+- このツールを使う場合、まずはsearch_memoriesを使って関連メモリのkeyを取得し、そのkeyを使ってdelete_memoryを呼び出すこと。
+
+これらのツールは、会話の連続性を構築し、よりパーソナライズされた支援を提供するために使用してください。
+エラー防止や意図推測のための仕組みではありません。
+"""
 
 search_agent = Agent(
   model="gemini-2.0-flash",
@@ -108,12 +217,8 @@ class SimpleAIAgent:
       # エージェントの作成
       self.agent = LlmAgent(
         name="SimpleAI",
-        description="シンプルなAIエージェント",
-        instruction="""
-                あなたは親切で役立つAIアシスタントです。
-                ユーザーの質問や要望に対して、丁寧で分かりやすい回答を提供してください。
-                日本語で回答してください。
-                """,
+        description="AIエージェントWelld",
+        instruction=system_instruction,
         model=MODEL_NAME,
         tools=self.mcp_tools,
         before_model_callback=before_model_modifier,
@@ -150,7 +255,9 @@ class SimpleAIAgent:
         return "ランナーが設定されていません"
 
       async for event in self.runner.run_async(user_id=self.user_id, session_id=self.session_id, new_message=content):
-        # print(f"  [Event] Author: {event.author}, Type: {type(event).__name__}, Final: {event.is_final_response()}, Content: {event.content}")
+        print(
+          f"  [Event] Author: {event.author}, Type: {type(event).__name__}, Final: {event.is_final_response()}, Content: {event.content}"
+        )
 
         if event.is_final_response():
           if event.content and event.content.parts:
@@ -165,6 +272,9 @@ class SimpleAIAgent:
           break
 
     except Exception as e:
+      import traceback
+
+      traceback.print_exc()
       print(f"⚠️ エージェント実行中にエラーが発生しました: {e}")
       final_response_text = f"エラーが発生しました: {e}"
 
