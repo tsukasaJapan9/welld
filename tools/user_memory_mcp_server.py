@@ -382,6 +382,22 @@ async def delete_memory(key: str) -> Tuple[bool, str]:
     return False, f"Error: {str(e)}"
 
 
+@mcp.tool("get_tag_list")
+async def get_tag_list() -> List[str]:
+  """
+  Get the list of available tags.
+  """
+  return [tag.value for tag in MemoryTag]
+
+
+@mcp.tool("get_priority_list")
+async def get_priority_list() -> List[str]:
+  """
+  Get the list of available priorities.
+  """
+  return [priority.value for priority in MemoryPriority]
+
+
 @mcp.tool("get_memory_stats")
 async def get_memory_stats() -> dict[str, Any]:
   """
@@ -438,20 +454,20 @@ if __name__ == "__main__":
   memory_manager = MemoryManager(memory_file="/home/tsukasa/works/welld/memory/user_memory.json")
 
   # Test code
-  # import asyncio
+  import asyncio
 
-  # async def test():
-  #     # Test adding memory
-  #     result = await add_memory("20240115103000", ["hobby", "learning"], "Started learning guitar")
-  #     print("Add memory:", result)
+  async def test():
+    # Test adding memory
+    result = await add_memory(["hobby", "learning"], "Started learning guitar", "high")
+    print("Add memory:", result)
 
-  #     # Test searching memories
-  #     result = await search_memories("音楽")
-  #     print("Search memories:", result)
-  #     result = await get_memory_stats()
-  #     print("Get memory stats:", result)
+    # # Test searching memories
+    # result = await search_memories("音楽")
+    # print("Search memories:", result)
+    # result = await get_memory_stats()
+    # print("Get memory stats:", result)
 
-  # asyncio.run(test())
+  asyncio.run(test())
 
   # result = memory_manager.search_memories("音楽")
   # for r in result:
@@ -460,4 +476,4 @@ if __name__ == "__main__":
   # for r in result:
   #   print(r.model_dump_json())
 
-  mcp.run(transport="stdio")
+  # mcp.run(transport="stdio")

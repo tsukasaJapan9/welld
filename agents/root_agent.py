@@ -5,7 +5,6 @@ Simple AI Agent using Google ADK
 """
 
 import asyncio
-import json
 import logging
 import os
 import uuid
@@ -56,22 +55,22 @@ def before_model_modifier(callback_context: CallbackContext, llm_request: LlmReq
     llm_request.config.system_instruction = new_instruction
 
   # 記憶を読み出してプロンプトに追加する
-#   with open(USER_MEMORY_FILE, "r", encoding="utf-8") as f:
-#     memories = json.load(f)
-#   # high or midを抽出
-#   memories = [memory for memory in memories if memory["priority"] == "high" or memory["priority"] == "mid"]
-#   memory_instruction = """
-# # メモリ
-# 以下はユーザに関するメモリ情報です。
-# 毎回参照するとしつこいので会話の流れに合うときだけ参照してください。
+  #   with open(USER_MEMORY_FILE, "r", encoding="utf-8") as f:
+  #     memories = json.load(f)
+  #   # high or midを抽出
+  #   memories = [memory for memory in memories if memory["priority"] == "high" or memory["priority"] == "mid"]
+  #   memory_instruction = """
+  # # メモリ
+  # 以下はユーザに関するメモリ情報です。
+  # 毎回参照するとしつこいので会話の流れに合うときだけ参照してください。
 
-#   """
-#   for memory in memories:
-#     memory_instruction += f"{memory['tags']}: {memory['content']}\n"
+  #   """
+  #   for memory in memories:
+  #     memory_instruction += f"{memory['tags']}: {memory['content']}\n"
 
-#   llm_request.config.system_instruction = llm_request.config.system_instruction + "\n" + memory_instruction
+  #   llm_request.config.system_instruction = llm_request.config.system_instruction + "\n" + memory_instruction
 
-#   print(llm_request.config.system_instruction)
+  #   print(llm_request.config.system_instruction)
 
   return None
 
@@ -86,6 +85,14 @@ system_instruction = """
 
 # メモリ使用ガイドライン
 会話の連続性やコンテキスト保持を向上させるために、メモリツールを最大限に活用してください。
+
+## メモリのタグ一覧
+- **get_tag_list**: メモリのタグ一覧を取得する。
+- メモリを保存したり、更新する際はまずタグ一覧を取得して適切なタグを指定すること。
+
+## メモリの優先度一覧
+- **get_priority_list**: メモリの優先度一覧を取得する。
+- メモリを保存したり、更新する際はまず優先度一覧を取得して適切な優先度を指定すること。
 
 ## メモリを保存するためのツール
 - **add_memory**: 重要な会話のやり取り、重要な意思決定、ユーザーの好みなど今後の会話で覚えておく価値のあるコンテキストを保存する。
@@ -200,7 +207,9 @@ class SimpleAIAgent:
         return "ランナーが設定されていません"
 
       async for event in self.runner.run_async(user_id=self.user_id, session_id=self.session_id, new_message=content):
-        # print(f"  [Event] Author: {event.author}, Type: {type(event).__name__}, Final: {event.is_final_response()}, Content: {event.content}")
+        print(
+          f"  [Event] Author: {event.author}, Type: {type(event).__name__}, Final: {event.is_final_response()}, Content: {event.content}"
+        )
 
         if event.is_final_response():
           if event.content and event.content.parts:
