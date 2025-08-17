@@ -9,6 +9,7 @@ import json
 import logging
 import os
 import sys
+import traceback
 import uuid
 from contextlib import asynccontextmanager
 from typing import Any, Dict, Optional
@@ -32,7 +33,7 @@ load_dotenv()
 
 
 # ログ設定
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
 
 # グローバル変数
@@ -100,7 +101,7 @@ class MemoryStatsResponse(BaseModel):
   message: Optional[str] = Field(None, description="エラーメッセージ")
 
 
-async def get_memory_stats_from_mcp() -> Optional[Dict[str, Any]]:
+async def get_memory_stats_from_file() -> Optional[Dict[str, Any]]:
   """メモリファイルから直接統計情報を取得"""
   try:
     # メモリファイルのパスを構築
@@ -115,7 +116,7 @@ async def get_memory_stats_from_mcp() -> Optional[Dict[str, Any]]:
 
     # メモリファイルを読み込み
     with open(memory_file_path, "r", encoding="utf-8") as f:
-      memories: list = json.load(f)
+      memories: Any = json.load(f)
 
     # 統計情報を計算
     total_memories = len(memories)
@@ -127,36 +128,45 @@ async def get_memory_stats_from_mcp() -> Optional[Dict[str, Any]]:
         "key_range": {"earliest": None, "latest": None},
         "tag_counts": {},
         "most_used_tags": [],
+        "latest_memory_contents": [],
       }
 
     # タグの使用頻度をカウント
     tag_counts: Dict[str, int] = {}
-    keys: list = []
+    created_at_list: list[str] = []
 
-    for memory in memories:
+    for memory in memories.values():
       # タグのカウント
-      for tag in memory.get("tags", []):
-        tag_counts[tag] = tag_counts.get(tag, 0) + 1
+      tags = memory.get("tags", [])
+      if isinstance(tags, list):
+        for tag in tags:
+          if isinstance(tag, str):
+            tag_counts[tag] = tag_counts.get(tag, 0) + 1
+      created_at = memory.get("created_at", "")
+      if isinstance(created_at, str):
+        created_at_list.append(created_at)
 
-      # キーの収集
-      keys.append(memory.get("key", ""))
-
-    # キーの範囲を計算
-    valid_keys: list = [k for k in keys if k and len(k) == 14 and k.isdigit()]
-    if valid_keys:
-      valid_keys.sort()
-      key_range: Dict[str, Optional[str]] = {"earliest": valid_keys[0], "latest": valid_keys[-1]}
+    if created_at_list:
+      created_at_list.sort()
+      key_range: Dict[str, Optional[str]] = {"earliest": created_at_list[0], "latest": created_at_list[-1]}
     else:
       key_range: Dict[str, Optional[str]] = {"earliest": None, "latest": None}
 
     # 最も使用されているタグ（上位5位）
     most_used_tags: list = sorted(tag_counts.items(), key=lambda x: x[1], reverse=True)[:5]
 
+    # 最新のメモリ内容
+    latest_memory_contents: list[str] = []
+    for memory in memories.values():
+      latest_memory_contents.append(memory.get("content", ""))
+    latest_memory_contents = latest_memory_contents[:10]
+
     stats = {
       "total_memories": total_memories,
       "key_range": key_range,
       "tag_counts": tag_counts,
       "most_used_tags": most_used_tags,
+      "latest_memory_contents": latest_memory_contents,
     }
 
     logger.info(f"✅ メモリファイルから統計情報を正常に取得しました: {total_memories}件")
@@ -169,6 +179,7 @@ async def get_memory_stats_from_mcp() -> Optional[Dict[str, Any]]:
     logger.error(f"❌ メモリファイルのJSON形式が不正です: {e}")
     return None
   except Exception as e:
+    traceback.print_exc()
     logger.error(f"❌ メモリファイルの読み込み中にエラーが発生: {e}")
     return None
 
@@ -224,27 +235,29 @@ async def get_memory_stats():
   """メモリ統計エンドポイント"""
   try:
     # MCPサーバーからメモリ統計を取得
-    mcp_stats = await get_memory_stats_from_mcp()
+    stats = await get_memory_stats_from_file()
 
-    if mcp_stats:
+    if stats:
       # MCPサーバーから取得したデータを使用
       logger.info("📊 MCPサーバーからメモリ統計を取得しました")
-      return MemoryStatsResponse(success=True, stats=mcp_stats, message=None)
+      return MemoryStatsResponse(success=True, stats=stats, message=None)
     else:
       # フォールバック: シミュレーションデータ
       fallback_stats = {
-        "total_memories": 25,
-        "key_range": {"earliest": "20240101000000", "latest": "20240115120000"},
+        "total_memories": 0,
+        "key_range": {"earliest": None, "latest": None},
         "tag_counts": {
-          "hobby": 8,
-          "learning": 6,
-          "health": 4,
-          "personality": 3,
-          "habit": 2,
-          "relationship": 1,
-          "goal": 1,
+          "hobby": 0,
+          "learning": 0,
+          "personal_information": 0,
+          "personality": 0,
+          "habit": 0,
+          "goal": 0,
+          "preference": 0,
+          "instruction_for_ai": 0,
         },
-        "most_used_tags": [["hobby", 8], ["learning", 6], ["health", 4], ["personality", 3], ["habit", 2]],
+        "most_used_tags": [],
+        "latest_memory_contents": [],
       }
 
       logger.info("📊 フォールバックデータを使用してメモリ統計を返しました")
