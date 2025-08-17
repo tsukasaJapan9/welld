@@ -212,10 +212,10 @@ class MemoryManager:
 
 
 # 環境変数からメモリファイルの保存場所を取得
-MEMORY_FILE = os.environ.get("MEMORY_FILE", "memory/user_memory.json")
+USER_MEMORY_FILE = os.environ.get("USER_MEMORY_FILE", "user_memory.json")
 
 # メモリマネージャーのインスタンス
-memory_manager = MemoryManager(MEMORY_FILE)
+memory_manager = MemoryManager(USER_MEMORY_FILE)
 
 # MCPサーバーの作成
 mcp = FastMCP("user_memory_mcp_server", log_level="ERROR")
@@ -391,16 +391,16 @@ async def delete_memory(key: str) -> Tuple[bool, str]:
     return False, f"Error: {str(e)}"
 
 
-@mcp.tool("get_tag_list")
-async def get_tag_list() -> List[str]:
+@mcp.tool("get_memory_tag_list")
+async def get_memory_tag_list() -> List[str]:
   """
   Get the list of available tags.
   """
   return [tag.value for tag in MemoryTag]
 
 
-@mcp.tool("get_priority_list")
-async def get_priority_list() -> List[str]:
+@mcp.tool("get_memory_priority_list")
+async def get_memory_priority_list() -> List[str]:
   """
   Get the list of available priorities.
   """

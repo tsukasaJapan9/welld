@@ -1,14 +1,17 @@
 import datetime
 import json
 import os
+import re
 import uuid
+from datetime import timedelta, timezone
 from enum import Enum
 from pathlib import Path
 from typing import List, Optional, Tuple
 
 from mcp.server.fastmcp import FastMCP
 from pydantic import BaseModel, Field
-from rapidfuzz import fuzz, process
+
+JST = timezone(timedelta(hours=9), name="JST")
 
 
 class SchedulePriority(Enum):
@@ -32,6 +35,7 @@ class ScheduleEntry(BaseModel):
 class ScheduleSearchResult(BaseModel):
   """Schedule search result"""
 
+  schedule_id: str = Field(..., description="Schedule ID")
   deadline: str = Field(..., description="Schedule deadline")
   content: str = Field(..., description="Schedule content")
   priority: str = Field(..., description="Schedule priority (high: high, mid: mid, low: low)")
@@ -106,55 +110,45 @@ class ScheduleManager:
     """指定されたキーのスケジュールを取得"""
     return self.schedules.get(schedule_id)
 
-  def search_schedules(self, query: str, tag: Optional[str] = None) -> List[ScheduleSearchResult]:
+  def search_schedules(self, before_date: int, after_date: int) -> List[ScheduleSearchResult]:
     """スケジュールを検索"""
     results: List[ScheduleSearchResult] = []
+
+    # 今日の日付を基準に検索範囲を計算
+    today = datetime.datetime.now(JST).replace(hour=0, minute=0, second=0, microsecond=0)
+    start_date = (today - datetime.timedelta(days=before_date)).strftime("%Y%m%d")
+    end_date = (today + datetime.timedelta(days=after_date)).strftime("%Y%m%d")
+
+    # 指定された期間内のスケジュールをフィルタリング
     filtered_schedules: dict[str, ScheduleEntry] = {}
+    for key, schedule in self.schedules.items():
+      schedule_date = schedule.deadline[:8]  # YYYYMMDD部分を取得
+      if start_date <= schedule_date <= end_date:
+        filtered_schedules[key] = schedule
 
-    # contentからMemoryを参照するための辞書
-    # contentが重複している場合は最後のものが優先される
-
-    # タグによるフィルタ
-    if tag:
-      filtered_schedules = {key: schedule for key, schedule in self.schedules.items() if tag in schedule.tags}
-    else:
-      filtered_schedules = self.schedules.copy()
-
-    # 類似度検索
-    matched_memories = process.extract(
-      query,
-      {key: schedule.content for key, schedule in filtered_schedules.items()},
-      limit=5,
-      scorer=fuzz.partial_ratio,
-      score_cutoff=20,
-    )
-
-    for _, score, key in matched_memories:
+    for key, schedule in filtered_schedules.items():
       results.append(
         ScheduleSearchResult(
-          key=key,
-          deadline=filtered_schedules[key].deadline,
-          content=filtered_schedules[key].content,
-          priority=filtered_schedules[key].priority,
-          created_at=filtered_schedules[key].created_at,
-          updated_at=filtered_schedules[key].updated_at,
-          score=score,
+          schedule_id=key,
+          deadline=schedule.deadline,
+          content=schedule.content,
+          priority=schedule.priority,
+          created_at=schedule.created_at,
+          updated_at=schedule.updated_at,
         )
       )
-    self._save_schedules()
     return results
 
   def get_all_schedules(self) -> List[ScheduleSearchResult]:
     """全てのメモリを取得"""
     return [
       ScheduleSearchResult(
-        key=key,
+        schedule_id=key,
         deadline=schedule.deadline,
         content=schedule.content,
         priority=schedule.priority,
         created_at=schedule.created_at,
         updated_at=schedule.updated_at,
-        score=0,
       )
       for key, schedule in self.schedules.items()
     ]
@@ -169,10 +163,10 @@ class ScheduleManager:
 
 
 # 環境変数からメモリファイルの保存場所を取得
-SCHEDULE_FILE = os.environ.get("SCHEDULE_FILE", "memory/user_schedule.json")
+USER_SCHEDULE_FILE = os.environ.get("USER_SCHEDULE_FILE", "memory/user_schedule.json")
 
 # スケジュールマネージャーのインスタンス
-schedule_manager = ScheduleManager(SCHEDULE_FILE)
+schedule_manager = ScheduleManager(USER_SCHEDULE_FILE)
 
 # MCPサーバーの作成
 mcp = FastMCP("user_schedule_mcp_server", log_level="ERROR")
@@ -189,7 +183,8 @@ async def add_schedule(deadline: str, content: str, priority: str) -> Tuple[bool
       - When you want to track progress or changes over time
 
   Args:
-      deadline (str): Schedule deadline.
+      deadline (str): Schedule deadline. Must be in YYYYMMDDHHMM format.
+                 Example: "202401151030"
       content (str): Schedule content. Provide detailed description.
       priority (str): Priority level ("high", "mid", "low"). Must be specified.
 
@@ -199,6 +194,9 @@ async def add_schedule(deadline: str, content: str, priority: str) -> Tuple[bool
           - message (str): Result message
   """
   try:
+    # 日付の検証
+    if not re.match(r"^\d{12}$", deadline):
+      return False, "Invalid deadline format. Must be in YYYYMMDDHHMM format."
     # 優先度の検証
     valid_priorities = [priority.value for priority in SchedulePriority]
     if priority not in valid_priorities:
@@ -242,7 +240,7 @@ async def update_schedule(schedule_id: str, content: str) -> Tuple[bool, str]:
 
 
 @mcp.tool("search_schedules")
-async def search_schedules(query: str) -> List[ScheduleSearchResult]:
+async def search_schedules(before_date: int, after_date: int) -> List[ScheduleSearchResult]:
   """
   Search schedules with flexible query.
 
@@ -250,14 +248,16 @@ async def search_schedules(query: str) -> List[ScheduleSearchResult]:
       - When you want to find schedules containing specific keywords or phrases
 
   Args:
-      query (str): Search query. Specify text that appears in schedule content.
-                   Example: "guitar" or "practice"
+      before_date (int): Search query. Specify the number of days before today.
+                   Example: 10
+      after_date (int): Search query. Specify the number of days after today.
+                   Example: 10
 
   Returns:
       List[ScheduleSearchResult]: List of search results
   """
   try:
-    results = schedule_manager.search_schedules(query)
+    results = schedule_manager.search_schedules(before_date, after_date)
     return results
   except Exception:
     return []
@@ -318,8 +318,8 @@ async def delete_schedule(schedule_id: str) -> Tuple[bool, str]:
     return False, f"Error: {str(e)}"
 
 
-@mcp.tool("get_priority_list")
-async def get_priority_list() -> List[str]:
+@mcp.tool("get_schedule_priority_list")
+async def get_schedule_priority_list() -> List[str]:
   """
   Get the list of available priorities.
   """
@@ -328,24 +328,31 @@ async def get_priority_list() -> List[str]:
 
 if __name__ == "__main__":
   # Test code
-  import asyncio
+  # import asyncio
 
-  schedule_manager = ScheduleManager(schedule_file="/home/tsukasa/works/welld/memory/user_schedule.json")
+  # schedule_manager = ScheduleManager(schedule_file="/home/tsukasa/works/welld/memory/user_schedule.json")
 
-  async def test():
-    # Test adding memory
-    result = await add_schedule("20250817100000", "Started learning guitar", "high")
-    print("Add schedule:", result)
+  # async def test():
+  #   # Test adding memory
+  #   schedule1 = await add_schedule("202508171000", "meeting with John", "high")
+  #   print("Add schedule:", schedule1)
 
-    all_schedules = await get_all_schedules()
-    print("All schedules:", all_schedules)
+  #   schedule2 = await add_schedule("202508181000", "meeting with Taro", "high")
+  #   print("Add schedule:", schedule2)
 
-    search_result = await search_schedules("learning guitar")
-    print("Search result:", search_result)
+  #   schedule3 = await add_schedule("202508161000", "meeting with Jiro", "high")
+  #   print("Add schedule:", schedule3)
 
-    delete_result = await delete_schedule(search_result[0].key)
-    print("Delete result:", delete_result)
+  #   all_schedules = await get_all_schedules()
+  #   print("All schedules:", all_schedules)
 
-  asyncio.run(test())
+  #   search_result = await search_schedules(1, 1)
+  #   print("Search result:", search_result)
 
-  # mcp.run(transport="stdio")
+  #   for schedule in all_schedules:
+  #     delete_result = await delete_schedule(schedule.schedule_id)
+  #     print("Delete result:", delete_result)
+
+  # asyncio.run(test())
+
+  mcp.run(transport="stdio")
