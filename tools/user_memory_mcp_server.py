@@ -57,6 +57,7 @@ class MemoryEntry(BaseModel):
 class MemorySearchResult(BaseModel):
   """メモリの検索結果"""
 
+  key: str = Field(..., description="メモリのキー")
   content: str = Field(..., description="メモリの内容")
   tags: List[str] = Field(..., description="タグのリスト")
   priority: str = Field(..., description="優先度 (high: 高, mid: 中, low: 低)")
@@ -109,8 +110,10 @@ class MemoryManager:
   def _save_memories(self):
     """メモリをファイルに保存する"""
     self.memory_file.parent.mkdir(parents=True, exist_ok=True)
+    # MemoryEntryオブジェクトを辞書形式に変換して保存
+    memories_dict = {key: memory.model_dump() for key, memory in self.memories.items()}
     with open(self.memory_file, "w", encoding="utf-8") as f:
-      json.dump(self.memories, f, ensure_ascii=False, indent=2)
+      json.dump(memories_dict, f, ensure_ascii=False, indent=2)
 
   def add_memory(self, tags: List[str], content: str, priority: str) -> bool:
     """新しいメモリを追加"""
@@ -165,8 +168,12 @@ class MemoryManager:
     )
 
     for _, score, key in matched_memories:
+      # 参照回数をインクリメントする
+      self.memories[key].reference_count += 1
+
       results.append(
         MemorySearchResult(
+          key=key,
           tags=filtered_memories[key].tags,
           content=filtered_memories[key].content,
           priority=filtered_memories[key].priority,
@@ -176,12 +183,14 @@ class MemoryManager:
           score=score,
         )
       )
+    self._save_memories()
     return results
 
   def get_all_memories(self) -> List[MemorySearchResult]:
     """全てのメモリを取得"""
     return [
       MemorySearchResult(
+        key=key,
         tags=memory.tags,
         content=memory.content,
         priority=memory.priority,
@@ -190,7 +199,7 @@ class MemoryManager:
         reference_count=memory.reference_count,
         score=0,
       )
-      for memory in self.memories.values()
+      for key, memory in self.memories.items()
     ]
 
   def delete_memory(self, key: str) -> bool:
@@ -285,7 +294,7 @@ async def update_memory(key: str, content: str) -> Tuple[bool, str]:
     if is_success:
       return True, "Success to update memory"
     else:
-      return False, f"Error: {str(e)}"
+      return False, "Failed to update memory"
   except Exception as e:
     return False, f"Error: {str(e)}"
 
@@ -377,7 +386,7 @@ async def delete_memory(key: str) -> Tuple[bool, str]:
     if is_success:
       return True, "Success to delete memory"
     else:
-      return False, f"Error: {str(e)}"
+      return False, "Failed to delete memory"
   except Exception as e:
     return False, f"Error: {str(e)}"
 
@@ -451,29 +460,28 @@ async def get_memory_stats() -> dict[str, Any]:
 
 
 if __name__ == "__main__":
-  memory_manager = MemoryManager(memory_file="/home/tsukasa/works/welld/memory/user_memory.json")
+  # # Test code
+  # import asyncio
 
-  # Test code
-  import asyncio
+  # memory_manager = MemoryManager(memory_file="/home/tsukasa/works/welld/memory/user_memory.json")
 
-  async def test():
-    # Test adding memory
-    result = await add_memory(["hobby", "learning"], "Started learning guitar", "high")
-    print("Add memory:", result)
+  # async def test():
+  #   # Test adding memory
+  #   result = await add_memory(["hobby", "learning"], "Started learning guitar", "high")
+  #   print("Add memory:", result)
 
-    # # Test searching memories
-    # result = await search_memories("音楽")
-    # print("Search memories:", result)
-    # result = await get_memory_stats()
-    # print("Get memory stats:", result)
+  #   all_memories = await get_all_memories()
+  #   print("All memories:", all_memories)
 
-  asyncio.run(test())
+  #   result = await get_memory_stats()
+  #   print("Get memory stats:", result)
 
-  # result = memory_manager.search_memories("音楽")
-  # for r in result:
-  #   print(r.model_dump_json())
-  # result = memory_manager.search_memories("エージェント")
-  # for r in result:
-  #   print(r.model_dump_json())
+  #   search_result = await search_memories("learning guitar")
+  #   print("Search result:", search_result)
 
-  # mcp.run(transport="stdio")
+  #   delete_result = await delete_memory(search_result[0].key)
+  #   print("Delete result:", delete_result)
+
+  # asyncio.run(test())
+
+  mcp.run(transport="stdio")
