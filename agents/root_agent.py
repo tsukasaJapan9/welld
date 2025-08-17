@@ -60,7 +60,12 @@ def before_model_modifier(callback_context: CallbackContext, llm_request: LlmReq
     memories = json.load(f)
   # high or midを抽出
   memories = [memory for memory in memories if memory["priority"] == "high" or memory["priority"] == "mid"]
-  memory_instruction = "# メモリ\n以下はユーザに関するメモリ情報です。これらを適宜参照して回答してください。\n"
+  memory_instruction = """
+# メモリ
+以下はユーザに関するメモリ情報です。
+毎回参照するとしつこいので会話の流れに合うときだけ参照してください。
+
+  """
   for memory in memories:
     memory_instruction += f"{memory['tags']}: {memory['content']}\n"
 

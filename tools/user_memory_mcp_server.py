@@ -3,27 +3,36 @@ import json
 import os
 from enum import Enum
 from pathlib import Path
-from typing import List, Optional
+from typing import Any, List, Optional, Tuple
 
 from mcp.server.fastmcp import FastMCP
 from pydantic import BaseModel, Field
+from rapidfuzz import fuzz, process
 
 
 class MemoryTag(Enum):
   """Predefined memory tag values (category-based)"""
 
-  # Main categories
   HOBBY = "hobby"
+  PERSONAL_INFORMATION = "personal_information"
   PERSONALITY = "personality"
   HABIT = "habit"
-  HEALTH = "health"
   LEARNING = "learning"
-  RELATIONSHIP = "relationship"
   GOAL = "goal"
-  EMOTION = "emotion"
-  LOCATION = "location"
-  TIME = "time"
   PREFERENCE = "preference"
+  INSTRUCTION_FOR_AI = "instruction_for_ai"
+
+
+MEMORY_TAG_EXAMPLES = {
+  MemoryTag.HOBBY: "books, music, movies, games, drawing, etc.",
+  MemoryTag.PERSONAL_INFORMATION: "name, age, job, location, family, birth date, etc.",
+  MemoryTag.PERSONALITY: "kind, optimistic, introverted, logical, etc.",
+  MemoryTag.HABIT: "morning walk, daily meditation, journaling, exercising, etc.",
+  MemoryTag.LEARNING: "Python, Spanish, machine learning, piano, etc.",
+  MemoryTag.GOAL: "get fit, launch a startup, pass an exam, write a book, etc.",
+  MemoryTag.PREFERENCE: "likes coffee, dislikes spicy food, prefers remote work, etc.",
+  MemoryTag.INSTRUCTION_FOR_AI: "always respond briefly, use polite tone, ask clarifying questions, etc.",
+}
 
 
 class MemoryPriority(Enum):
@@ -37,22 +46,24 @@ class MemoryPriority(Enum):
 class MemoryEntry(BaseModel):
   """メモリエントリの構造"""
 
-  key: str = Field(..., description="メモリのキー (YYYYMMDDHHMMSS形式)")
   tags: List[str] = Field(..., description="タグのリスト")
   content: str = Field(..., description="メモリの内容")
   priority: str = Field(..., description="優先度 (high: 高, mid: 中, low: 低)")
   created_at: str = Field(..., description="作成日時")
   updated_at: str = Field(..., description="更新日時")
+  reference_count: int = Field(default=0, description="参照された回数")
 
 
 class MemorySearchResult(BaseModel):
-  """メモリ検索結果の構造"""
+  """メモリの検索結果"""
 
-  key: str = Field(..., description="メモリのキー")
-  tags: List[str] = Field(..., description="タグ")
-  content: str = Field(..., description="内容")
+  content: str = Field(..., description="メモリの内容")
+  tags: List[str] = Field(..., description="タグのリスト")
   priority: str = Field(..., description="優先度 (high: 高, mid: 中, low: 低)")
-  relevance_score: float = Field(..., description="関連性スコア")
+  created_at: str = Field(..., description="作成日時")
+  updated_at: str = Field(..., description="更新日時")
+  reference_count: int = Field(default=0, description="参照された回数")
+  score: float = Field(..., description="類似度スコア")
 
 
 class MemoryManager:
@@ -62,7 +73,7 @@ class MemoryManager:
     self.memory_file = Path(memory_file)
     # メモリディレクトリを自動作成
     self.memory_file.parent.mkdir(parents=True, exist_ok=True)
-    self.memories: List[MemoryEntry] = []
+    self.memories: dict[str, MemoryEntry] = {}
     self._load_memories()
 
   def _load_memories(self):
@@ -71,106 +82,123 @@ class MemoryManager:
       try:
         with open(self.memory_file, "r", encoding="utf-8") as f:
           data = json.load(f)
-          self.memories = []
-          for item in data:
+          for key, item in data.items():
             # 過去のデータにpriorityフィールドがない場合は"mid"をデフォルト値として設定
             if "priority" not in item:
               item["priority"] = "mid"
+            # 過去のデータにreference_countフィールドがない場合は0をデフォルト値として設定
+            if "reference_count" not in item:
+              item["reference_count"] = 0
+            # タグがENUMのリストにあるかチェック
+            tmp_tags = []
+            for tag in item["tags"]:
+              if tag in [t.value for t in MemoryTag]:
+                tmp_tags.append(tag)
+            item["tags"] = tmp_tags if tmp_tags else [MemoryTag.PERSONALITY.value]
+
             try:
-              self.memories.append(MemoryEntry(**item))
+              self.memories[key] = MemoryEntry(**item)
             except Exception as e:
               print(f"Warning: Failed to load memory item: {e}, item: {item}")
               continue
       except (json.JSONDecodeError, KeyError):
-        self.memories = []
+        self.memories = {}
     else:
-      self.memories = []
+      self.memories = {}
 
   def _save_memories(self):
     """メモリをファイルに保存する"""
     self.memory_file.parent.mkdir(parents=True, exist_ok=True)
     with open(self.memory_file, "w", encoding="utf-8") as f:
-      json.dump([memory.model_dump() for memory in self.memories], f, ensure_ascii=False, indent=2)
+      json.dump(self.memories, f, ensure_ascii=False, indent=2)
 
-  def add_memory(self, key: str, tags: List[str], content: str, priority: str) -> MemoryEntry:
+  def add_memory(self, tags: List[str], content: str, priority: str) -> bool:
     """新しいメモリを追加"""
-    now = datetime.datetime.now().isoformat()
-    memory = MemoryEntry(key=key, tags=tags, content=content, priority=priority, created_at=now, updated_at=now)
-    self.memories.append(memory)
+    now = datetime.datetime.now().strftime("%Y%m%d%H%M%S")
+    memory = MemoryEntry(
+      tags=tags,
+      content=content,
+      priority=priority,
+      created_at=now,
+      updated_at=now,
+      reference_count=0,
+    )
+    self.memories[f"memory_{now}"] = memory
     self._save_memories()
-    return memory
+    return True
 
-  def update_memory(
-    self, key: str, tags: List[str], content: str, priority: Optional[str] = None
-  ) -> Optional[MemoryEntry]:
+  def update_memory(self, key: str, content: str) -> bool:
     """指定されたキーのメモリを更新"""
-    now = datetime.datetime.now().isoformat()
-    for memory in self.memories:
-      if memory.key == key:
-        memory.tags = tags
-        memory.content = content
-        if priority is not None:
-          memory.priority = priority
-        memory.updated_at = now
-        self._save_memories()
-        return memory
-    return None
+    now = datetime.datetime.now().strftime("%Y%m%d%H%M%S")
+    if key in self.memories.keys():
+      self.memories[key].content = content
+      self.memories[key].updated_at = now
+      self._save_memories()
+      return True
+    return False
 
   def get_memory_by_key(self, key: str) -> Optional[MemoryEntry]:
     """指定されたキーのメモリを取得"""
-    for memory in self.memories:
-      if memory.key == key:
-        return memory
-    return None
+    return self.memories.get(key)
 
-  def search_memories(self, query: str, tags: Optional[List[str]] = None) -> List[MemorySearchResult]:
+  def search_memories(self, query: str, tag: Optional[str] = None) -> List[MemorySearchResult]:
     """メモリを検索"""
-    results = []
+    results: List[MemorySearchResult] = []
+    filtered_memories: dict[str, MemoryEntry] = {}
 
-    for memory in self.memories:
-      relevance_score = 0.0
+    # contentからMemoryを参照するための辞書
+    # contentが重複している場合は最後のものが優先される
 
-      # タグによる検索
-      if tags:
-        tag_matches = sum(1 for tag in tags if tag in memory.tags)
-        if tag_matches > 0:
-          relevance_score += tag_matches * 0.5
+    # タグによるフィルタ
+    if tag:
+      filtered_memories = {key: memory for key, memory in self.memories.items() if tag in memory.tags}
+    else:
+      filtered_memories = self.memories.copy()
 
-      # 内容による検索
-      if query.lower() in memory.content.lower():
-        relevance_score += 1.0
+    # 類似度検索
+    matched_memories = process.extract(
+      query,
+      {key: memory.content for key, memory in filtered_memories.items()},
+      limit=5,
+      scorer=fuzz.partial_ratio,
+      score_cutoff=20,
+    )
 
-      # タグによる検索
-      for tag in memory.tags:
-        if query.lower() in tag.lower():
-          relevance_score += 0.8
-
-      if relevance_score > 0:
-        results.append(
-          MemorySearchResult(
-            key=memory.key,
-            tags=memory.tags,
-            content=memory.content,
-            priority=memory.priority,
-            relevance_score=relevance_score,
-          )
+    for _, score, key in matched_memories:
+      results.append(
+        MemorySearchResult(
+          tags=filtered_memories[key].tags,
+          content=filtered_memories[key].content,
+          priority=filtered_memories[key].priority,
+          created_at=filtered_memories[key].created_at,
+          updated_at=filtered_memories[key].updated_at,
+          reference_count=filtered_memories[key].reference_count,
+          score=score,
         )
-
-    # 関連性スコアでソート
-    results.sort(key=lambda x: x.relevance_score, reverse=True)
+      )
     return results
 
-  def get_all_memories(self) -> List[MemoryEntry]:
+  def get_all_memories(self) -> List[MemorySearchResult]:
     """全てのメモリを取得"""
-    return self.memories
+    return [
+      MemorySearchResult(
+        tags=memory.tags,
+        content=memory.content,
+        priority=memory.priority,
+        created_at=memory.created_at,
+        updated_at=memory.updated_at,
+        reference_count=memory.reference_count,
+        score=0,
+      )
+      for memory in self.memories.values()
+    ]
 
   def delete_memory(self, key: str) -> bool:
     """指定されたキーのメモリを削除"""
-    for i, memory in enumerate(self.memories):
-      if memory.key == key:
-        del self.memories[i]
-        self._save_memories()
-        return True
+    if key in self.memories:
+      del self.memories[key]
+      self._save_memories()
+      return True
     return False
 
 
@@ -185,10 +213,13 @@ mcp = FastMCP("user_memory_mcp_server", log_level="ERROR")
 
 
 @mcp.tool("add_memory")
-async def add_memory(key: str, tags: List[str], content: str, priority: str) -> dict:
-  """
-  Add a new memory entry.
-  ユーザーとの絆を深めるために、ユーザーの趣味や目標などの重要な情報を永続的に記憶する。これを活用すれば、あなたはよりパーソナライズされた最高のパートナーになれる
+async def add_memory(tags: List[str], content: str, priority: str) -> Tuple[bool, str]:
+  tag_list = ""
+  for tag in MemoryTag:
+    tag_list += f"- {tag.value}({MEMORY_TAG_EXAMPLES[tag]})\n"
+
+  f"""
+  Add a new memory with user's information.
 
   When to use:
       - When you want to record a new memory, experience, or observation
@@ -198,61 +229,36 @@ async def add_memory(key: str, tags: List[str], content: str, priority: str) -> 
       - When you want to track progress or changes over time
 
   Args:
-      key (str): Memory key in YYYYMMDDHHMMSS format.
-                 Example: "20240115103000" (January 15, 2024, 10:30:00)
-      tags (List[str]): List of tags. Only predefined tags are allowed.
-                        Example: ["hobby", "learning"] or ["health", "habit", "preference"]
+      tags (List[str]): List of tags.
+      {tag_list}
       content (str): Memory content. Provide detailed description.
       priority (str): Priority level ("high", "mid", "low"). Must be specified.
 
   Returns:
-      dict: Dictionary containing operation result
+      Tuple[bool, str]: Tuple containing operation result 
           - success (bool): Operation success/failure
           - message (str): Result message
-          - memory (dict): Information of added memory (on success)
-
-  Raises:
-      ValueError: When key format is invalid
-      Exception: When other errors occur
-
-  Example:
-      >>> result = await add_memory(
-      ...     key="20240115103000",
-      ...     tags=["hobby", "learning"],
-      ...     content="Started learning guitar. The chord positions are difficult but fun."
-      ... )
-      >>> print(result)
-      {'success': True, 'message': 'Memory added successfully', 'memory': {...}}
-
-  Note:
-      - If a memory with the same key already exists, it will be overwritten
-      - Tags must be selected from the 10 predefined categories
-      - Key must be exactly 14 digits
   """
   try:
-    # キー形式の検証 (YYYYMMDDHHMMSS)
-    if len(key) != 14 or not key.isdigit():
-      return {"success": False, "message": "キー形式が正しくありません。YYYYMMDDHHMMSS形式で入力してください。"}
-
     # タグの検証
     valid_tags = [tag.value for tag in MemoryTag]
     invalid_tags = [tag for tag in tags if tag not in valid_tags]
     if invalid_tags:
-      return {"success": False, "message": f"無効なタグが含まれています: {invalid_tags}", "valid_tags": valid_tags}
+      return False, f"Invalid tags: {invalid_tags}"
 
     # 優先度の検証
     valid_priorities = [priority.value for priority in MemoryPriority]
     if priority not in valid_priorities:
-      return {"success": False, "message": f"無効な優先度です: {priority}", "valid_priorities": valid_priorities}
+      return False, f"Invalid priority: {priority}"
 
-    memory = memory_manager.add_memory(key, tags, content, priority)
-    return {"success": True, "message": "メモリが正常に追加されました", "memory": memory.model_dump()}
+    is_success = memory_manager.add_memory(tags, content, priority)
+    return is_success, "Success to add memory"
   except Exception as e:
-    return {"success": False, "message": f"エラーが発生しました: {str(e)}"}
+    return False, f"Error: {str(e)}"
 
 
 @mcp.tool("update_memory")
-async def update_memory(key: str, tags: List[str], content: str, priority: Optional[str] = None) -> dict:
+async def update_memory(key: str, content: str) -> Tuple[bool, str]:
   """
   Update a memory entry with the specified key.
 
@@ -265,106 +271,31 @@ async def update_memory(key: str, tags: List[str], content: str, priority: Optio
 
   Args:
       key (str): Key of the memory to update. Must be in YYYYMMDDHHMMSS format.
-                 Example: "20240115103000"
-      tags (List[str]): New list of tags. Only predefined tags are allowed.
-                        Example: ["hobby", "learning", "goal"] or ["health", "habit", "preference"]
+                 Example: "memory_20240115103000"
       content (str): New memory content. Replaces existing content.
-      priority (Optional[str]): New priority level ("high", "mid", "low"). If not specified, current priority is maintained.
 
   Returns:
-      dict: Dictionary containing operation result
+      Tuple[bool, str]: Tuple containing operation result
           - success (bool): Operation success/failure
           - message (str): Result message
-          - memory (dict): Information of updated memory (on success)
 
-  Raises:
-      Exception: When errors occur
-
-  Example:
-      >>> result = await update_memory(
-      ...     key="20240115103000",
-      ...     tags=["hobby", "learning", "goal"],
-      ...     content="Continuing guitar practice. Chord positions are gradually improving."
-      ... )
-      >>> print(result)
-      {'success': True, 'message': 'Memory updated successfully', 'memory': {...}}
-
-  Note:
-      - Update will not occur if the specified key doesn't exist
-      - Updated timestamp is automatically updated
-      - Both tags and content are completely replaced
   """
   try:
-    # タグの検証
-    valid_tags = [tag.value for tag in MemoryTag]
-    invalid_tags = [tag for tag in tags if tag not in valid_tags]
-    if invalid_tags:
-      return {"success": False, "message": f"無効なタグが含まれています: {invalid_tags}", "valid_tags": valid_tags}
-
-    # 優先度の検証（指定されている場合のみ）
-    if priority is not None:
-      valid_priorities = [priority.value for priority in MemoryPriority]
-      if priority not in valid_priorities:
-        return {"success": False, "message": f"無効な優先度です: {priority}", "valid_priorities": valid_priorities}
-
-    memory = memory_manager.update_memory(key, tags, content, priority)
-    if memory:
-      return {"success": True, "message": "メモリが正常に更新されました", "memory": memory.model_dump()}
+    is_success = memory_manager.update_memory(key, content)
+    if is_success:
+      return True, "Success to update memory"
     else:
-      return {"success": False, "message": f"キー {key} のメモリが見つかりません"}
+      return False, f"Error: {str(e)}"
   except Exception as e:
-    return {"success": False, "message": f"エラーが発生しました: {str(e)}"}
-
-
-@mcp.tool("get_memory")
-async def get_memory(key: str) -> dict:
-  """
-  Retrieve a memory entry with the specified key.
-
-  When to use:
-      - When you need to retrieve a specific memory by its exact key
-      - When you want to display detailed information about a particular memory
-      - When you need to verify the content of an existing memory before updating
-      - When building user interfaces that show individual memory details
-      - When you want to check if a specific memory exists
-
-  Args:
-      key (str): Key of the memory to retrieve. Must be in YYYYMMDDHHMMSS format.
-                 Example: "20240115103000"
-
-  Returns:
-      dict: Dictionary containing operation result
-          - success (bool): Operation success/failure
-          - memory (dict): Retrieved memory information (on success)
-          - message (str): Error message (on failure)
-
-  Raises:
-      Exception: When errors occur
-
-  Example:
-      >>> result = await get_memory("20240115103000")
-      >>> if result["success"]:
-      ...     print(f"Memory content: {result['memory']['content']}")
-      ...     print(f"Tags: {result['memory']['tags']}")
-      ... else:
-      ...     print(f"Error: {result['message']})
-
-  Note:
-      - Error is returned if the specified key doesn't exist
-      - Memory content, tags, created and updated timestamps are included
-  """
-  try:
-    memory = memory_manager.get_memory_by_key(key)
-    if memory:
-      return {"success": True, "memory": memory.model_dump()}
-    else:
-      return {"success": False, "message": f"キー {key} のメモリが見つかりません"}
-  except Exception as e:
-    return {"success": False, "message": f"エラーが発生しました: {str(e)}"}
+    return False, f"Error: {str(e)}"
 
 
 @mcp.tool("search_memories")
-async def search_memories(query: str, tags: Optional[List[str]] = None) -> dict:
+async def search_memories(query: str, tags: Optional[str] = None) -> List[MemorySearchResult]:
+  tag_list = ""
+  for tag in MemoryTag:
+    tag_list += f"- {tag.value}({MEMORY_TAG_EXAMPLES[tag]})\n"
+
   """
   Search memories with flexible query and tag-based filtering.
 
@@ -379,47 +310,21 @@ async def search_memories(query: str, tags: Optional[List[str]] = None) -> dict:
   Args:
       query (str): Search query. Specify text that appears in memory content or tags.
                    Example: "guitar" or "practice"
-      tags (Optional[List[str]]): Target tags for search. If specified, only memories with these tags are searched.
-                                  Example: ["hobby", "learning", "preference"] or None (all tags)
+      tags (Optional[str]): Target tags for search. If specified, only memories with these tags are searched.
+                                  {tag_list}
 
   Returns:
-      dict: Dictionary containing search results
-          - success (bool): Operation success/failure
-          - results (List[dict]): List of search results (on success)
-              - key (str): Memory key
-              - tags (List[str]): List of tags
-              - content (str): Memory content
-              - relevance_score (float): Relevance score
-          - count (int): Number of search results
-          - message (str): Error message (on failure)
-
-  Raises:
-      Exception: When errors occur
-
-  Example:
-            # Search by query only
-      >>> result = await search_memories("guitar")
-      >>> print(f"Search results: {result['count']} items")
-
-      # Search with tag filter
-      >>> result = await search_memories("practice", tags=["hobby"])
-      >>> for item in result['results']:
-      ...     print(f"Relevance: {item['relevance_score']}, Content: {item['content']}")
-
-  Note:
-      - Relevance score is calculated as: content match (1.0), tag match (0.8), specified tag match (0.5)
-      - Results are sorted by relevance score in descending order
-      - Search is possible with empty query if tags are specified
+      List[MemorySearchResult]: List of search results
   """
   try:
     results = memory_manager.search_memories(query, tags)
-    return {"success": True, "results": [result.model_dump() for result in results], "count": len(results)}
-  except Exception as e:
-    return {"success": False, "message": f"エラーが発生しました: {str(e)}"}
+    return results
+  except Exception:
+    return []
 
 
 @mcp.tool("get_all_memories")
-async def get_all_memories() -> dict:
+async def get_all_memories() -> List[MemorySearchResult]:
   """
   Retrieve all stored memory entries.
 
@@ -435,44 +340,17 @@ async def get_all_memories() -> dict:
       None (no parameters required)
 
   Returns:
-      dict: Dictionary containing all memory information
-          - success (bool): Operation success/failure
-          - memories (List[dict]): List of all memories (on success)
-              - key (str): Memory key
-              - tags (List[str]): List of tags
-              - content (str): Memory content
-              - created_at (str): Creation timestamp
-              - updated_at (str): Update timestamp
-          - count (int): Total number of memories
-          - message (str): Error message (on failure)
-
-  Raises:
-      Exception: When errors occur
-
-  Example:
-      >>> result = await get_all_memories()
-      >>> if result["success"]:
-      ...     print(f"Total memories: {result['count']} items")
-      ...     for memory in result['memories']:
-      ...         print(f"Key: {memory['key']}, Tags: {memory['tags']}")
-      ...         print(f"Content: {memory['content'][:50]}...")
-      ... else:
-      ...     print(f"Error: {result['message']})
-
-  Note:
-      - Empty list is returned if no memories exist
-      - Processing time may increase with large numbers of memories
-      - Memories are not guaranteed to be returned in creation order
+      List[MemorySearchResult]: List of all memories
   """
   try:
     memories = memory_manager.get_all_memories()
-    return {"success": True, "memories": [memory.model_dump() for memory in memories], "count": len(memories)}
-  except Exception as e:
-    return {"success": False, "message": f"エラーが発生しました: {str(e)}"}
+    return memories
+  except Exception:
+    return []
 
 
 @mcp.tool("delete_memory")
-async def delete_memory(key: str) -> dict:
+async def delete_memory(key: str) -> Tuple[bool, str]:
   """
   Delete a memory entry with the specified key.
 
@@ -489,38 +367,23 @@ async def delete_memory(key: str) -> dict:
                  Example: "20240115103000"
 
   Returns:
-      dict: Dictionary containing operation result
+      Tuple[bool, str]: Tuple containing operation result
           - success (bool): Operation success/failure
           - message (str): Result message
 
-  Raises:
-      Exception: When errors occur
-
-  Example:
-      >>> result = await delete_memory("20240115103000")
-      >>> if result["success"]:
-      ...     print("Delete completed:", result["message"])
-      ... else:
-      ...     print("Delete failed:", result["message"])
-
-  Note:
-      - Deleted memories cannot be restored
-      - Error is returned if the specified key doesn't exist
-      - Memory file is automatically updated after deletion
-      - Delete operation cannot be undone
   """
   try:
-    success = memory_manager.delete_memory(key)
-    if success:
-      return {"success": True, "message": f"キー {key} のメモリが削除されました"}
+    is_success = memory_manager.delete_memory(key)
+    if is_success:
+      return True, "Success to delete memory"
     else:
-      return {"success": False, "message": f"キー {key} のメモリが見つかりません"}
+      return False, f"Error: {str(e)}"
   except Exception as e:
-    return {"success": False, "message": f"エラーが発生しました: {str(e)}"}
+    return False, f"Error: {str(e)}"
 
 
 @mcp.tool("get_memory_stats")
-async def get_memory_stats() -> dict:
+async def get_memory_stats() -> dict[str, Any]:
   """
   Retrieve memory statistics. Provides analytical data including total count, key range, and tag usage frequency.
 
@@ -538,189 +401,42 @@ async def get_memory_stats() -> dict:
 
   Returns:
       dict: Dictionary containing statistics
-          - success (bool): Operation success/failure
-          - stats (dict): Statistics information (on success)
-              - total_memories (int): Total number of memories
-              - key_range (dict): Range of keys
-                  - earliest (str): Oldest key (YYYYMMDDHHMMSS format)
-                  - latest (str): Newest key (YYYYMMDDHHMMSS format)
-              - tag_counts (dict): Usage count for each tag
-                  - Key: Tag name (e.g., "趣味")
-                  - Value: Usage count
-              - most_used_tags (List[tuple]): Top 5 most used tags
-                  - Each element: Tuple of (tag_name, usage_count)
-          - message (str): Error message (on failure)
-
-  Raises:
-      Exception: When errors occur
-
-  Example:
-      >>> result = await get_memory_stats()
-      >>> if result["success"]:
-      ...     stats = result["stats"]
-      ...     print(f"Total memories: {stats['total_memories']} items")
-      ...     print(f"Key range: {stats['key_range']['earliest']} to {stats['key_range']['latest']}")
-      ...     print("Popular tags:")
-      ...     for tag, count in stats['most_used_tags']:
-      ...         print(f"  {tag}: {count} times")
-      ... else:
-      ...     print(f"Error: {result['message']})
-
-  Note:
-      - If no memories exist, total_memories=0 and key_range=None are returned
-      - Tag usage count indicates the number of memories with that tag
-      - most_used_tags are sorted by usage count in descending order
-      - Statistics are calculated in real-time
+        - total_memories (int): Total number of memories
+        - key_range (dict): Range of keys
+            - earliest (str): Oldest key (YYYYMMDDHHMMSS format)
+            - latest (str): Newest key (YYYYMMDDHHMMSS format)
+        - tag_counts (dict): Usage count for each tag
+            - Key: Tag name (e.g., "趣味")
+            - Value: Usage count
+        - most_used_tags (List[tuple]): Top 5 most used tags
+            - Each element: Tuple of (tag_name, usage_count)
   """
   try:
     memories = memory_manager.get_all_memories()
 
     # タグの統計
-    tag_counts = {}
+    tag_counts: dict[str, int] = {}
     for memory in memories:
       for tag in memory.tags:
         tag_counts[tag] = tag_counts.get(tag, 0) + 1
 
     # キー範囲
-    keys = [memory.key for memory in memories]
+    keys = [memory.created_at for memory in memories]
     keys.sort()
 
     return {
-      "success": True,
-      "stats": {
-        "total_memories": len(memories),
-        "key_range": {"earliest": keys[0] if keys else None, "latest": keys[-1] if keys else None},
-        "tag_counts": tag_counts,
-        "most_used_tags": sorted(tag_counts.items(), key=lambda x: x[1], reverse=True)[:5],
-      },
+      "total_memories": len(memories),
+      "key_range": {"earliest": keys[0] if keys else None, "latest": keys[-1] if keys else None},
+      "tag_counts": tag_counts,
+      "most_used_tags": sorted(tag_counts.items(), key=lambda x: x[1], reverse=True)[:5],
     }
-  except Exception as e:
-    return {"success": False, "message": f"エラーが発生しました: {str(e)}"}
-
-
-@mcp.tool("get_available_tags")
-async def get_available_tags() -> dict:
-  """
-  Retrieve a list of available tags. Provides 10 predefined category-based tags.
-
-  When to use:
-      - When building user interfaces that need to display available tag options
-      - When implementing tag selection dropdowns or autocomplete features
-      - When you need to validate user input against valid tags
-      - When building tag management or configuration interfaces
-      - When you want to show users what categories are available for organizing memories
-      - When implementing tag-based filtering or categorization features
-      - When building help or documentation systems that explain the tag system
-
-  Args:
-      None (no parameters required)
-
-  Returns:
-      dict: Dictionary containing tag information
-          - success (bool): Operation success/failure
-          - tags (dict): Category-based tag information (on success)
-              - Key: Category name (e.g., "主要カテゴリ")
-              - Value: List of tags
-                  - value (str): Japanese tag value (e.g., "趣味")
-                  - key (str): English tag key (e.g., "HOBBY")
-          - total_categories (int): Total number of categories
-          - total_tags (int): Total number of tags
-          - message (str): Error message (on failure)
-
-  Raises:
-      Exception: When errors occur
-
-  Example:
-      >>> result = await get_available_tags()
-      >>> if result["success"]:
-      ...     print(f"Categories: {result['total_categories']}")
-      ...     print(f"Total tags: {result['total_tags']}")
-      ...     for category, tags in result['tags'].items():
-      ...         print(f"\n{category}:")
-      ...         for tag in tags:
-      ...             print(f"  {tag['value']} ({tag['key']})")
-      ... else:
-      ...     print(f"Error: {result['message']})
-
-  Note:
-      - Currently 10 main category tags are available
-      - Each tag includes both Japanese value and English key
-      - Tags are categorized as follows:
-        hobby, personality, habit, health, learning, relationship, goal, emotion, location, time, preference
-      - These tags can be used when adding or updating memories
-      - Tag validation is performed automatically, invalid tags are rejected
-  """
-  try:
-    # カテゴリ別にタグを整理
-    tag_categories = {"主要カテゴリ": [{"value": tag.value, "key": tag.name} for tag in MemoryTag]}
-
-    return {
-      "success": True,
-      "tags": tag_categories,
-      "total_categories": len(tag_categories),
-      "total_tags": sum(len(tags) for tags in tag_categories.values()),
-    }
-  except Exception as e:
-    return {"success": False, "message": f"エラーが発生しました: {str(e)}"}
-
-
-@mcp.tool("get_available_priorities")
-async def get_available_priorities() -> dict:
-  """
-  Retrieve a list of available priority levels. Provides 3 predefined priority levels.
-
-  When to use:
-      - When building user interfaces that need to display available priority options
-      - When implementing priority selection dropdowns or radio buttons
-      - When you need to validate user input against valid priority values
-      - When building priority management or configuration interfaces
-      - When you want to show users what priority levels are available for organizing memories
-      - When implementing priority-based filtering or sorting features
-      - When building help or documentation systems that explain the priority system
-
-  Args:
-      None (no parameters required)
-
-  Returns:
-      dict: Dictionary containing priority information
-          - success (bool): Operation success/failure
-          - priorities (List[str]): List of available priority levels (on success)
-              - "high": High priority (最重要)
-              - "mid": Medium priority (普通)
-              - "low": Low priority (低)
-          - total_priorities (int): Total number of priority levels
-          - message (str): Error message (on failure)
-
-  Raises:
-      Exception: When errors occur
-
-  Example:
-      >>> result = await get_available_priorities()
-      >>> if result["success"]:
-      ...     print(f"Available priorities: {result['priorities']}")
-      ...     print(f"Total priority levels: {result['total_priorities']}")
-      ... else:
-      ...     print(f"Error: {result['message']})
-
-  Note:
-      - Currently 3 priority levels are available: high, mid, low
-      - High priority memories are displayed first in search results
-      - Priority validation is performed automatically, invalid priorities are rejected
-      - Priority must be explicitly specified when creating new memories
-  """
-  try:
-    priorities = [priority.value for priority in MemoryPriority]
-
-    return {
-      "success": True,
-      "priorities": priorities,
-      "total_priorities": len(priorities),
-    }
-  except Exception as e:
-    return {"success": False, "message": f"エラーが発生しました: {str(e)}"}
+  except Exception:
+    return {}
 
 
 if __name__ == "__main__":
+  memory_manager = MemoryManager(memory_file="/home/tsukasa/works/welld/memory/user_memory.json")
+
   # Test code
   # import asyncio
 
@@ -728,11 +444,20 @@ if __name__ == "__main__":
   #     # Test adding memory
   #     result = await add_memory("20240115103000", ["hobby", "learning"], "Started learning guitar")
   #     print("Add memory:", result)
-  #
+
   #     # Test searching memories
-  #     result = await search_memories("guitar")
+  #     result = await search_memories("音楽")
   #     print("Search memories:", result)
+  #     result = await get_memory_stats()
+  #     print("Get memory stats:", result)
 
   # asyncio.run(test())
+
+  # result = memory_manager.search_memories("音楽")
+  # for r in result:
+  #   print(r.model_dump_json())
+  # result = memory_manager.search_memories("エージェント")
+  # for r in result:
+  #   print(r.model_dump_json())
 
   mcp.run(transport="stdio")
